@@ -1,36 +1,147 @@
+# Release Workflow for StricklySoft Core SDK
+#
+# This workflow automates the release process using GoReleaser.
+# It triggers on semver tags (v*) and creates draft GitHub releases.
+#
+# Release Process:
+# 1. Developer creates and pushes a semver tag
+# 2. This workflow triggers automatically
+# 3. Tests run to verify the release is stable
+# 4. GoReleaser creates a draft release with:
+#    - Changelog generated from conventional commits
+#    - Checksums for verification
+#    - Release notes grouped by commit type
+# 5. Maintainer reviews and publishes the draft release
+#
+# Versioning Guidelines:
+# - v1.0.0     : Major release (breaking changes)
+# - v1.1.0     : Minor release (new features, backwards compatible)
+# - v1.1.1     : Patch release (bug fixes)
+# - v1.0.0-alpha.1 : Pre-release (auto-detected by GoReleaser)
+# - v1.0.0-beta.1  : Pre-release
+# - v1.0.0-rc.1    : Release candidate
+
 name: Release
 
 on:
   push:
     tags:
-      - "v*"
+      # Trigger on semantic version tags
+      - "v*.*.*"
 
+# Permissions required for creating releases
 permissions:
   contents: write
 
+# Prevent concurrent releases
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Use consistent Go version
+  GO_VERSION: "1.23"
+
 jobs:
-  release:
-    name: Release
+  # ===========================================================================
+  # Validation Job
+  # ===========================================================================
+  # Runs tests to ensure the tagged version is stable before release
+  validate:
+    name: Validate Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Verify dependencies
+        run: |
+          go mod verify
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "::error::go.mod or go.sum is not tidy"
+            exit 1
+          fi
+
       - name: Run tests
-        run: make test
+        run: go test -v -race ./...
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+
+  # ===========================================================================
+  # Release Job
+  # ===========================================================================
+  # Creates the GitHub release using GoReleaser
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history for changelog generation
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Validate GoReleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: check
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-artifacts
+          path: |
+            dist/checksums.txt
+            dist/*.tar.gz
+          retention-days: 7
+
+  # ===========================================================================
+  # Notification Job (Optional)
+  # ===========================================================================
+  # Notify on release completion (can be extended for Slack, Discord, etc.)
+  notify:
+    name: Release Notification
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: always()
+    steps:
+      - name: Check release status
+        run: |
+          if [ "${{ needs.release.result }}" == "success" ]; then
+            echo "✅ Release ${{ github.ref_name }} created successfully!"
+            echo "📝 Review the draft release at: https://github.com/${{ github.repository }}/releases"
+          else
+            echo "❌ Release ${{ github.ref_name }} failed"
+            exit 1
+          fi
