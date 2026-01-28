@@ -193,6 +193,27 @@ func TestSpanIDFromContext_WithTrace(t *testing.T) {
 	}
 }
 
+func TestSpanIDFromContext_TraceIDOnlyNoSpanID(t *testing.T) {
+	// A SpanContext with a valid TraceID but a zero SpanID should NOT
+	// return a span ID. This verifies that SpanIDFromContext checks
+	// HasSpanID() rather than HasTraceID().
+	traceIDBytes := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID(traceIDBytes),
+		SpanID:     trace.SpanID([8]byte{}), // zero span ID
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+
+	spanID, ok := SpanIDFromContext(ctx)
+	if ok {
+		t.Error("SpanIDFromContext returned true with zero SpanID, want false")
+	}
+	if spanID != "" {
+		t.Errorf("SpanIDFromContext = %q, want empty string", spanID)
+	}
+}
+
 // TestContextKeys_Independent verifies that different context keys do not
 // interfere with each other.
 func TestContextKeys_Independent(t *testing.T) {

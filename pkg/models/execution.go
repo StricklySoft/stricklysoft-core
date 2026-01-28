@@ -108,7 +108,7 @@ func (s ExecutionStatus) IsTerminal() bool {
 //
 // Execution records are created via [NewExecution] and are immutable after
 // creation except for status-related updates (Status, EndTime, TokensUsed,
-// ErrorMessage, UpdatedAt). Status transition validation is the
+// ErrorMessage, Metadata, UpdatedAt). Status transition validation is the
 // responsibility of the Vigil service, not this model.
 type Execution struct {
 	// ID is the unique identifier for this execution (UUID v4).

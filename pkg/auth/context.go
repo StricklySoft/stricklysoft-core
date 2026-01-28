@@ -109,7 +109,7 @@ func TraceIDFromContext(ctx context.Context) (string, bool) {
 // or an empty string and false if no span is present.
 func SpanIDFromContext(ctx context.Context) (string, bool) {
 	spanCtx := trace.SpanFromContext(ctx).SpanContext()
-	if !spanCtx.HasTraceID() {
+	if !spanCtx.HasSpanID() {
 		return "", false
 	}
 	return spanCtx.SpanID().String(), true

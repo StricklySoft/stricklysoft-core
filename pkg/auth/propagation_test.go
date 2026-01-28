@@ -458,6 +458,32 @@ func TestIdentityFromHeaders_InvalidIdentityType(t *testing.T) {
 	}
 }
 
+func TestIdentityFromHeaders_EmptyIdentityType(t *testing.T) {
+	// When identity type is empty (missing header), it should default to
+	// IdentityTypeService without logging a warning.
+	getter := func(key string) string {
+		switch key {
+		case HeaderIdentityID:
+			return "svc-1"
+		case HeaderIdentityType:
+			return ""
+		default:
+			return ""
+		}
+	}
+
+	identity, _, _, err := identityFromHeaders(getter)
+	if err != nil {
+		t.Fatalf("identityFromHeaders error: %v", err)
+	}
+	if identity == nil {
+		t.Fatal("identityFromHeaders returned nil identity")
+	}
+	if identity.Type() != IdentityTypeService {
+		t.Errorf("Type() = %q, want %q (default for empty type)", identity.Type(), IdentityTypeService)
+	}
+}
+
 func TestIdentityFromHeaders_InvalidClaims(t *testing.T) {
 	getter := func(key string) string {
 		switch key {
