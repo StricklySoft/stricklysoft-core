@@ -1,0 +1,173 @@
+# CI Pipeline for StricklySoft Core SDK
+#
+# This workflow runs on every push to main/dev and on all pull requests.
+# It performs the following checks:
+#   - Lint: Code quality and style checks using golangci-lint
+#   - Test: Unit tests with race detection and coverage reporting
+#   - Build: Compilation verification across Go versions
+#
+# Go Version Matrix:
+#   - Go 1.22: Minimum supported version (required for stdlib slog)
+#   - Go 1.23: Latest stable version
+#
+# Security:
+#   - Uses minimal permissions (contents: read)
+#   - Pins action versions for supply chain security
+#   - Caches dependencies to reduce external fetches
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+# Restrict permissions to minimum required
+permissions:
+  contents: read
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Use consistent Go version for linting
+  GO_VERSION_LINT: "1.23"
+
+jobs:
+  # ===========================================================================
+  # Lint Job
+  # ===========================================================================
+  # Runs golangci-lint to check code quality and style.
+  # Uses the latest golangci-lint with configuration from .golangci.yml
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION_LINT }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  # ===========================================================================
+  # Test Job
+  # ===========================================================================
+  # Runs unit tests with race detection across Go version matrix.
+  # Generates coverage reports and uploads to Codecov.
+  test:
+    name: Test (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.22", "1.23"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run unit tests with race detector
+        run: go test -v -race -shuffle=on ./...
+
+      - name: Run tests with coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage to Codecov
+        if: matrix.go-version == env.GO_VERSION_LINT
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ===========================================================================
+  # Build Job
+  # ===========================================================================
+  # Verifies the code compiles successfully across Go version matrix.
+  # Runs after lint and test to fail fast on code issues.
+  build:
+    name: Build (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.22", "1.23"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Build all packages
+        run: go build -v ./...
+
+      - name: Check for uncommitted changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Uncommitted changes detected after build"
+            git status --porcelain
+            git diff
+            exit 1
+          fi
+
+  # ===========================================================================
+  # Integration Test Job (Optional)
+  # ===========================================================================
+  # Runs integration tests that require Docker.
+  # Only runs if integration test files exist.
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION_LINT }}
+          cache: true
+
+      - name: Check for integration tests
+        id: check
+        run: |
+          if grep -r "//go:build integration" --include="*.go" . 2>/dev/null; then
+            echo "has_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run integration tests
+        if: steps.check.outputs.has_tests == 'true'
+        run: go test -v -race -tags=integration ./...

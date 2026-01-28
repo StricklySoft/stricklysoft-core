@@ -17,7 +17,7 @@ linters:
     - unparam
     - gocritic
     - revive
-    - exportloopref
+    - copyloopvar
 
 linters-settings:
   errcheck:
