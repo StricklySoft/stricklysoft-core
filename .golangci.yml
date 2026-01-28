@@ -1,7 +1,6 @@
 # golangci-lint configuration for StricklySoft Core SDK
 # See: https://golangci-lint.run/usage/configuration/
-version: "2"
-
+# Using v1.x format for stability. Upgrade to v2 format when ready.
 run:
   timeout: 5m
   modules-download-mode: readonly

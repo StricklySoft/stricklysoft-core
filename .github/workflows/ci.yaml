@@ -56,11 +56,11 @@ jobs:
           cache: true
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v6
         with:
-          # Pin version for reproducible builds. Update periodically.
+          # Pin to v1.x for stability. v2.x requires config migration.
           # Check releases: https://github.com/golangci/golangci-lint/releases
-          version: v2.8.0
+          version: v1.64.8
           args: --timeout=5m
 
   # ===========================================================================
