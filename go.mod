@@ -3,6 +3,7 @@ module github.com/StricklySoft/stricklysoft-core
 go 1.22.0
 
 require (
+	github.com/google/uuid v1.6.0
 	go.opentelemetry.io/otel/trace v1.26.0
 	google.golang.org/grpc v1.63.2
 )
