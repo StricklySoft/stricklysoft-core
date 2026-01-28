@@ -48,6 +48,17 @@ const (
 	HeaderCallChain = "x-call-chain"
 )
 
+// MaxHeaderValueSize is the maximum allowed size in bytes for a single
+// serialized header value (claims or call chain). This limit prevents
+// oversized headers that would be rejected by HTTP/2 (default
+// SETTINGS_MAX_HEADER_LIST_SIZE is 16 KB) or HTTP/1.1 servers (commonly
+// limited to 8 KB per header).
+//
+// The value 8192 (8 KB) is a conservative limit that works with all
+// standard HTTP implementations. Individual values are checked
+// independently; total header budget is left to the transport layer.
+const MaxHeaderValueSize = 8192
+
 // bearerPrefix is the standard "Bearer " prefix for authorization tokens.
 const bearerPrefix = "Bearer "
 
@@ -70,7 +81,8 @@ func ExtractBearerToken(authHeader string) string {
 // This format is safe for use in HTTP headers and gRPC metadata values.
 //
 // Returns an empty string if claims is nil or empty.
-// Returns an error if the claims cannot be marshaled to JSON.
+// Returns an error if the claims cannot be marshaled to JSON or if the
+// encoded output exceeds [MaxHeaderValueSize].
 func SerializeClaims(claims map[string]any) (string, error) {
 	if len(claims) == 0 {
 		return "", nil
@@ -79,7 +91,11 @@ func SerializeClaims(claims map[string]any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("auth: failed to marshal claims: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(data), nil
+	encoded := base64.RawURLEncoding.EncodeToString(data)
+	if len(encoded) > MaxHeaderValueSize {
+		return "", fmt.Errorf("auth: serialized claims size %d exceeds maximum %d bytes", len(encoded), MaxHeaderValueSize)
+	}
+	return encoded, nil
 }
 
 // DeserializeClaims decodes a base64url-encoded JSON string into a claims map.
@@ -107,7 +123,8 @@ func DeserializeClaims(encoded string) (map[string]any, error) {
 // This format is safe for use in HTTP headers and gRPC metadata values.
 //
 // Returns an empty string if chain is nil.
-// Returns an error if the chain cannot be marshaled to JSON.
+// Returns an error if the chain cannot be marshaled to JSON or if the
+// encoded output exceeds [MaxHeaderValueSize].
 func SerializeCallChain(chain *CallChain) (string, error) {
 	if chain == nil {
 		return "", nil
@@ -116,7 +133,11 @@ func SerializeCallChain(chain *CallChain) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("auth: failed to marshal call chain: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(data), nil
+	encoded := base64.RawURLEncoding.EncodeToString(data)
+	if len(encoded) > MaxHeaderValueSize {
+		return "", fmt.Errorf("auth: serialized call chain size %d exceeds maximum %d bytes", len(encoded), MaxHeaderValueSize)
+	}
+	return encoded, nil
 }
 
 // DeserializeCallChain decodes a base64url-encoded JSON string into a CallChain.

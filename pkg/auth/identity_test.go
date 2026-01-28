@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -93,6 +94,23 @@ func TestNewBasicIdentity_NilClaims(t *testing.T) {
 // Verify BasicIdentity implements the Identity interface at compile time.
 var _ Identity = (*BasicIdentity)(nil)
 
+func TestBasicIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
+	identity := NewBasicIdentity("user-1", IdentityTypeUser, map[string]any{"key": "original"})
+
+	// Mutating the returned map should not affect subsequent calls.
+	first := identity.Claims()
+	first["key"] = "mutated"
+	first["injected"] = "attack"
+
+	second := identity.Claims()
+	if second["key"] != "original" {
+		t.Errorf("Claims() mutation leaked: key = %q, want %q", second["key"], "original")
+	}
+	if _, exists := second["injected"]; exists {
+		t.Error("Claims() mutation leaked: injected key should not exist")
+	}
+}
+
 func TestCallChain_Depth(t *testing.T) {
 	chain := &CallChain{
 		OriginalID:   "user-1",
@@ -110,6 +128,53 @@ func TestCallChain_Depth(t *testing.T) {
 	chain = chain.AppendCaller(CallerInfo{ServiceName: "svc-b"})
 	if chain.Depth() != 2 {
 		t.Errorf("Depth() = %d, want 2", chain.Depth())
+	}
+}
+
+func TestCallChain_AppendCaller_TruncatesAtMaxDepth(t *testing.T) {
+	chain := &CallChain{
+		OriginalID:   "user-1",
+		OriginalType: IdentityTypeUser,
+	}
+
+	// Fill the chain to MaxCallChainDepth.
+	for i := 0; i < MaxCallChainDepth; i++ {
+		chain = chain.AppendCaller(CallerInfo{ServiceName: fmt.Sprintf("svc-%d", i)})
+	}
+	if chain.Depth() != MaxCallChainDepth {
+		t.Fatalf("Depth() = %d, want %d", chain.Depth(), MaxCallChainDepth)
+	}
+
+	// Adding one more should still result in MaxCallChainDepth entries.
+	chain = chain.AppendCaller(CallerInfo{ServiceName: "svc-overflow"})
+	if chain.Depth() != MaxCallChainDepth {
+		t.Fatalf("Depth() = %d after overflow, want %d", chain.Depth(), MaxCallChainDepth)
+	}
+
+	// The newest caller should be the last entry.
+	last := chain.Callers[MaxCallChainDepth-1]
+	if last.ServiceName != "svc-overflow" {
+		t.Errorf("last caller = %q, want %q", last.ServiceName, "svc-overflow")
+	}
+
+	// The oldest caller (svc-0) should have been dropped.
+	first := chain.Callers[0]
+	if first.ServiceName == "svc-0" {
+		t.Error("oldest caller svc-0 should have been truncated")
+	}
+	// The first entry should now be svc-1 (second-oldest from previous chain).
+	if first.ServiceName != "svc-1" {
+		t.Errorf("first caller = %q, want %q", first.ServiceName, "svc-1")
+	}
+}
+
+func TestCallChain_MaxCallChainDepth_IsReasonable(t *testing.T) {
+	// Verify the constant is a sane value.
+	if MaxCallChainDepth < 8 {
+		t.Errorf("MaxCallChainDepth = %d, too small for realistic service meshes", MaxCallChainDepth)
+	}
+	if MaxCallChainDepth > 128 {
+		t.Errorf("MaxCallChainDepth = %d, too large — risks header overflow", MaxCallChainDepth)
 	}
 }
 
