@@ -63,8 +63,10 @@ checksum:
 changelog:
   # Sort commits by timestamp
   sort: asc
-  # Use conventional commits format
-  use: conventional
+  # Note: 'use: conventional' is a GoReleaser Pro feature and is not
+  # available in the OSS distribution. The OSS version relies on
+  # regex-based commit grouping (configured in the 'groups' section below)
+  # and filter patterns to achieve conventional commit categorization.
   # Commit message filters
   filters:
     # Exclude these commit types from changelog
