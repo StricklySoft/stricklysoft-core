@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -214,6 +215,14 @@ func identityFromHeaders(getValue headerGetter) (Identity, string, *CallChain, e
 	if !idType.Valid() {
 		// Default to service identity if type is missing or invalid,
 		// since service-to-service propagation is the most common case.
+		// Log a warning for non-empty invalid values to surface tampered
+		// or malformed headers in security audits.
+		if raw := string(idType); raw != "" {
+			slog.Warn("auth: invalid identity type in propagated header, defaulting to service",
+				"invalid_type", raw,
+				"identity_id", id,
+			)
+		}
 		idType = IdentityTypeService
 	}
 
