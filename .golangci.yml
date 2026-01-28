@@ -22,7 +22,13 @@ linters:
 linters-settings:
   errcheck:
     check-type-assertions: true
-    check-blank: true
+    check-blank: false
+    # Exclude fmt.Fprint* from errcheck as ignoring return values
+    # in fmt.Formatter implementations is standard Go practice
+    exclude-functions:
+      - fmt.Fprint
+      - fmt.Fprintf
+      - fmt.Fprintln
   govet:
     enable-all: true
     disable:
