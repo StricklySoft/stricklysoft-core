@@ -160,8 +160,9 @@ type Execution struct {
 	// Metadata is an extensible key-value store for agent-specific data.
 	// Each agent can attach its own metadata without modifying the
 	// Execution schema. Nil metadata is normalized to an empty map
-	// by [NewExecution].
-	Metadata map[string]any `json:"metadata,omitempty" db:"metadata"`
+	// by [NewExecution], so this field is always present in JSON output
+	// for constructor-created executions (at minimum as an empty object).
+	Metadata map[string]any `json:"metadata" db:"metadata"`
 
 	// CreatedAt is the UTC timestamp when the execution record was created.
 	CreatedAt time.Time `json:"created_at" db:"created_at"`

@@ -382,7 +382,7 @@ func TestIsTerminal_FailedExecution(t *testing.T) {
 	}
 }
 
-func TestIsTerminal_CancelledExecution(t *testing.T) {
+func TestIsTerminal_CanceledExecution(t *testing.T) {
 	exec := mustNewExecution(t, "user-1", "task", "ns")
 	exec.Status = ExecutionStatusCanceled
 	if !exec.IsTerminal() {
@@ -531,6 +531,11 @@ func TestExecution_JSONOmitsEmptyFields(t *testing.T) {
 	if !strings.Contains(jsonStr, "\"status\"") {
 		t.Error("JSON should contain status")
 	}
+
+	// Metadata is always present (initialized by NewExecution), even when empty.
+	if !strings.Contains(jsonStr, "\"metadata\"") {
+		t.Error("JSON should contain metadata even when empty")
+	}
 }
 
 func TestExecution_JSONWithEndTime(t *testing.T) {
@@ -597,6 +602,62 @@ func TestExecution_JSONWithMetadata(t *testing.T) {
 	}
 	if decoded.Metadata["count"] != float64(42) {
 		t.Errorf("Metadata[count] = %v, want 42", decoded.Metadata["count"])
+	}
+}
+
+func TestExecution_JSONMetadataEmptyMap(t *testing.T) {
+	exec := mustNewExecution(t, "user-1", "task", "ns")
+	// NewExecution initializes Metadata to an empty map (non-nil).
+
+	data, err := json.Marshal(exec)
+	if err != nil {
+		t.Fatalf("json.Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Empty-but-non-nil map should still appear in JSON output.
+	if !strings.Contains(jsonStr, "\"metadata\":{}") {
+		t.Errorf("JSON should contain metadata as empty object, got: %s", jsonStr)
+	}
+
+	var decoded Execution
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal error: %v", err)
+	}
+	if decoded.Metadata == nil {
+		t.Error("decoded Metadata should not be nil for empty map")
+	}
+	if len(decoded.Metadata) != 0 {
+		t.Errorf("decoded Metadata should be empty, got %d entries", len(decoded.Metadata))
+	}
+}
+
+func TestExecution_JSONMetadataNilMap(t *testing.T) {
+	// Manually constructed execution with nil Metadata (not via NewExecution).
+	exec := &Execution{
+		ID:         "test-id",
+		IdentityID: "user-1",
+		Intent:     "task",
+		Status:     ExecutionStatusPending,
+		StartTime:  time.Now().UTC(),
+		Namespace:  "ns",
+		Metadata:   nil,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+
+	data, err := json.Marshal(exec)
+	if err != nil {
+		t.Fatalf("json.Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Nil metadata should serialize as null (not omitted, since omitempty
+	// was removed — metadata is always present in the JSON contract).
+	if !strings.Contains(jsonStr, "\"metadata\":null") {
+		t.Errorf("JSON should contain metadata as null for nil map, got: %s", jsonStr)
 	}
 }
 
