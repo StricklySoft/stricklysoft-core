@@ -1,8 +1,27 @@
+# Issue Template Configuration
+# See: https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+
+# Disable blank issues to ensure all issues use templates
 blank_issues_enabled: false
+
+# External links shown in the issue template chooser
 contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/StricklySoft/stricklysoft-core/security/advisories/new
+    about: |
+      Report security vulnerabilities privately. Do NOT create public issues for security concerns.
+
   - name: Documentation
     url: https://github.com/StricklySoft/stricklysoft-core/tree/main/docs
-    about: Check the documentation before opening an issue
+    about: |
+      Check the documentation for answers before opening an issue.
+
   - name: Discussions
     url: https://github.com/StricklySoft/stricklysoft-core/discussions
-    about: Ask questions and discuss ideas
+    about: |
+      Ask questions, share ideas, and connect with other users.
+
+  - name: Stack Overflow
+    url: https://stackoverflow.com/questions/tagged/stricklysoft
+    about: |
+      Search for existing answers or ask the community on Stack Overflow.
