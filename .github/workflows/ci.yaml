@@ -59,7 +59,7 @@ jobs:
             go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           # Pin to v1.x for stability. v2.x requires config migration.
           # Check releases: https://github.com/golangci/golangci-lint/releases
