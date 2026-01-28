@@ -253,7 +253,7 @@ func TestError_WithDetail(t *testing.T) {
 	modified := original.WithDetail("field", "email")
 
 	// Original should be unchanged
-	if original.Details != nil && len(original.Details) > 0 {
+	if len(original.Details) > 0 {
 		t.Error("WithDetail modified the original error")
 	}
 

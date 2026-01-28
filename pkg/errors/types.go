@@ -112,20 +112,20 @@ func (e *Error) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 'v':
 		if s.Flag('+') {
-			fmt.Fprintf(s, "Error{Code: %q, Message: %q", e.Code, e.Message)
+			_, _ = fmt.Fprintf(s, "Error{Code: %q, Message: %q", e.Code, e.Message)
 			if len(e.Details) > 0 {
-				fmt.Fprintf(s, ", Details: %v", e.Details)
+				_, _ = fmt.Fprintf(s, ", Details: %v", e.Details)
 			}
 			if e.Cause != nil {
-				fmt.Fprintf(s, ", Cause: %+v", e.Cause)
+				_, _ = fmt.Fprintf(s, ", Cause: %+v", e.Cause)
 			}
-			fmt.Fprint(s, "}")
+			_, _ = fmt.Fprint(s, "}")
 			return
 		}
 		fallthrough
 	case 's':
-		fmt.Fprint(s, e.Error())
+		_, _ = fmt.Fprint(s, e.Error())
 	case 'q':
-		fmt.Fprintf(s, "%q", e.Error())
+		_, _ = fmt.Fprintf(s, "%q", e.Error())
 	}
 }

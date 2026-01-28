@@ -444,18 +444,18 @@ func TestCheckFunctions_WithWrappedErrors(t *testing.T) {
 func TestCheckFunctions_Exhaustive(t *testing.T) {
 	// Test that every error category is covered by exactly one category check
 	allCodes := []struct {
-		code           Code
-		isValidation   bool
-		isAuth         bool
-		isAuthz        bool
-		isNotFound     bool
-		isConflict     bool
-		isInternal     bool
-		isUnavailable  bool
-		isTimeout      bool
-		isClientError  bool
-		isServerError  bool
-		isRetryable    bool
+		code          Code
+		isValidation  bool
+		isAuth        bool
+		isAuthz       bool
+		isNotFound    bool
+		isConflict    bool
+		isInternal    bool
+		isUnavailable bool
+		isTimeout     bool
+		isClientError bool
+		isServerError bool
+		isRetryable   bool
 	}{
 		{CodeValidation, true, false, false, false, false, false, false, false, true, false, false},
 		{CodeAuthentication, false, true, false, false, false, false, false, false, true, false, false},
