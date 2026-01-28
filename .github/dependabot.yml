@@ -1,32 +1,111 @@
+# Dependabot Configuration for StricklySoft Core SDK
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Security Updates:
+#   - Enabled via repository settings (not this file)
+#   - Security updates create PRs immediately when vulnerabilities detected
+#   - Takes priority over scheduled version updates
+#
+# Version Updates:
+#   - Configured below for Go modules and GitHub Actions
+#   - Scheduled weekly to reduce PR noise
+#   - Groups minor/patch updates to minimize PR count
+
 version: 2
+
 updates:
+  # =============================================================================
+  # Go Modules (go.mod)
+  # =============================================================================
+  # Monitors all direct and transitive dependencies in go.mod for updates.
+  # Security updates are immediate; version updates are weekly.
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+
+    # Limit concurrent PRs to prevent overwhelming reviewers
     open-pull-requests-limit: 10
+
+    # Labels for easy filtering and triage
     labels:
       - "dependencies"
       - "go"
+
+    # Consistent commit message format
     commit-message:
       prefix: "deps"
+      include: "scope"
+
+    # Group minor and patch updates together to reduce PR noise
+    # Major updates remain separate for careful review
     groups:
-      otel:
+      # Group all minor and patch updates together
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Group OpenTelemetry packages (commonly updated together)
+      opentelemetry:
+        applies-to: version-updates
         patterns:
           - "go.opentelemetry.io/*"
+
+      # Group testcontainers packages
       testcontainers:
+        applies-to: version-updates
         patterns:
           - "github.com/testcontainers/*"
 
+    # Reviewers to auto-assign (uncomment when team is established)
+    # reviewers:
+    #   - "StricklySoft/core-maintainers"
+
+    # Ignore specific packages if needed (uncomment to use)
+    # ignore:
+    #   - dependency-name: "example-package"
+    #     versions: ["4.x", "5.x"]
+
+  # =============================================================================
+  # GitHub Actions
+  # =============================================================================
+  # Monitors workflow actions for updates and security patches.
+  # Keeping actions updated is critical for CI/CD security.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+
+    # Lower limit for actions as they change less frequently
     open-pull-requests-limit: 5
+
+    # Labels for filtering CI-related dependency updates
     labels:
       - "dependencies"
       - "ci"
+
+    # Consistent commit message format
     commit-message:
       prefix: "ci"
+      include: "scope"
+
+    # Group action updates by type
+    groups:
+      # Group minor and patch action updates
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
