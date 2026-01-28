@@ -113,9 +113,9 @@ type TokenValidator interface {
 // return its own Identity type with richer functionality. BasicIdentity is
 // primarily used for reconstructing identity from propagated headers.
 type BasicIdentity struct {
-	id         string
-	idType     IdentityType
-	claims     map[string]any
+	id     string
+	idType IdentityType
+	claims map[string]any
 }
 
 // NewBasicIdentity creates a new BasicIdentity with the given parameters.
