@@ -81,8 +81,8 @@ type Identity interface {
 
 	// Claims returns the identity's claims as a map. Claims include
 	// attributes like email, roles, scopes, and other metadata from
-	// the authentication token. The returned map must not be modified
-	// by the caller.
+	// the authentication token. Implementations should return a copy
+	// of the underlying claims to ensure immutability.
 	Claims() map[string]any
 }
 
@@ -143,10 +143,15 @@ func (b *BasicIdentity) Type() IdentityType {
 	return b.idType
 }
 
-// Claims returns the identity's claims. The returned map must not be
-// modified by the caller.
+// Claims returns a shallow copy of the identity's claims. Each call returns
+// a new map, so callers may safely modify the result without affecting the
+// identity or other callers.
 func (b *BasicIdentity) Claims() map[string]any {
-	return b.claims
+	copied := make(map[string]any, len(b.claims))
+	for k, v := range b.claims {
+		copied[k] = v
+	}
+	return copied
 }
 
 // CallerInfo records the identity of a service in the call chain.
@@ -195,6 +200,16 @@ type CallChain struct {
 	Callers []CallerInfo `json:"callers"`
 }
 
+// MaxCallChainDepth is the maximum number of callers tracked in a CallChain.
+// When a chain exceeds this depth, the oldest intermediate callers are
+// truncated to prevent unbounded growth that could exceed HTTP header size
+// limits or cause excessive memory usage.
+//
+// The value 32 supports realistic deep call chains while keeping the
+// serialized header well within HTTP/2's default SETTINGS_MAX_HEADER_LIST_SIZE
+// (16 KB) and HTTP/1.1's practical limits (~8 KB).
+const MaxCallChainDepth = 32
+
 // Depth returns the number of services in the call chain, including the
 // current service. A direct call (no intermediaries) has depth 0.
 func (c *CallChain) Depth() int {
@@ -203,10 +218,20 @@ func (c *CallChain) Depth() int {
 
 // AppendCaller adds a new caller to the end of the call chain and returns
 // the updated chain. The original CallChain is not modified.
+//
+// If appending the caller would exceed [MaxCallChainDepth], the oldest
+// intermediate callers are dropped to make room while preserving the most
+// recent callers (which are most useful for debugging).
 func (c *CallChain) AppendCaller(caller CallerInfo) *CallChain {
 	callers := make([]CallerInfo, len(c.Callers), len(c.Callers)+1)
 	copy(callers, c.Callers)
 	callers = append(callers, caller)
+
+	// Truncate oldest callers if the chain exceeds the maximum depth.
+	if len(callers) > MaxCallChainDepth {
+		callers = callers[len(callers)-MaxCallChainDepth:]
+	}
+
 	return &CallChain{
 		OriginalID:   c.OriginalID,
 		OriginalType: c.OriginalType,

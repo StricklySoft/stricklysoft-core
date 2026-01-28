@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -155,6 +156,31 @@ func TestDeserializeClaims_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestSerializeClaims_ExceedsMaxHeaderSize(t *testing.T) {
+	// Create claims that will produce an encoded output larger than MaxHeaderValueSize.
+	claims := make(map[string]any)
+	for i := 0; i < 500; i++ {
+		claims[fmt.Sprintf("claim-key-%04d", i)] = strings.Repeat("x", 20)
+	}
+
+	_, err := SerializeClaims(claims)
+	if err == nil {
+		t.Error("SerializeClaims should return error when encoded output exceeds MaxHeaderValueSize")
+	}
+	if err != nil && !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Errorf("error message should mention size limit, got: %v", err)
+	}
+}
+
+func TestMaxHeaderValueSize_IsReasonable(t *testing.T) {
+	if MaxHeaderValueSize < 4096 {
+		t.Errorf("MaxHeaderValueSize = %d, too small for practical use", MaxHeaderValueSize)
+	}
+	if MaxHeaderValueSize > 16384 {
+		t.Errorf("MaxHeaderValueSize = %d, exceeds HTTP/2 default limit", MaxHeaderValueSize)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // SerializeCallChain / DeserializeCallChain
 // ---------------------------------------------------------------------------
@@ -230,6 +256,29 @@ func TestDeserializeCallChain_InvalidJSON(t *testing.T) {
 	_, err := DeserializeCallChain(encoded)
 	if err == nil {
 		t.Error("DeserializeCallChain did not return error for invalid JSON")
+	}
+}
+
+func TestSerializeCallChain_ExceedsMaxHeaderSize(t *testing.T) {
+	// Create a call chain with very long service names to exceed the limit.
+	chain := &CallChain{
+		OriginalID:   "user-1",
+		OriginalType: IdentityTypeUser,
+	}
+	for i := 0; i < 100; i++ {
+		chain.Callers = append(chain.Callers, CallerInfo{
+			ServiceName:  strings.Repeat("a", 100),
+			IdentityID:   strings.Repeat("b", 100),
+			IdentityType: IdentityTypeService,
+		})
+	}
+
+	_, err := SerializeCallChain(chain)
+	if err == nil {
+		t.Error("SerializeCallChain should return error when encoded output exceeds MaxHeaderValueSize")
+	}
+	if err != nil && !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Errorf("error message should mention size limit, got: %v", err)
 	}
 }
 
