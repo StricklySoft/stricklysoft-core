@@ -8,10 +8,11 @@
 // provides gRPC interceptors and HTTP middleware that transparently propagate
 // identity context across service boundaries.
 //
-// The identity model supports three types:
+// The identity model supports four types:
 //   - User: A human user authenticated via JWT or other credential
 //   - Service: A platform service authenticating via service account
 //   - Agent: An AI agent operating on behalf of a user or system
+//   - System: An internal system process (background jobs, cron, migrations)
 //
 // Each request carries both the original identity (who initiated the request)
 // and a call chain (which services have handled it), enabling full audit trails.
@@ -47,6 +48,12 @@ const (
 	// Agent identities track which agent is performing an action, enabling
 	// fine-grained authorization and audit logging for autonomous operations.
 	IdentityTypeAgent IdentityType = "agent"
+
+	// IdentityTypeSystem represents an internal system process such as a
+	// background job, scheduled task, or migration. System identities are
+	// not tied to a human user or external service and typically have
+	// elevated privileges scoped to their specific function.
+	IdentityTypeSystem IdentityType = "system"
 )
 
 // String returns the string representation of the identity type.
@@ -57,7 +64,7 @@ func (t IdentityType) String() string {
 // Valid reports whether the identity type is one of the recognized values.
 func (t IdentityType) Valid() bool {
 	switch t {
-	case IdentityTypeUser, IdentityTypeService, IdentityTypeAgent:
+	case IdentityTypeUser, IdentityTypeService, IdentityTypeAgent, IdentityTypeSystem:
 		return true
 	default:
 		return false
@@ -84,6 +91,15 @@ type Identity interface {
 	// the authentication token. Implementations should return a copy
 	// of the underlying claims to ensure immutability.
 	Claims() map[string]any
+
+	// HasPermission checks whether this identity is authorized to perform
+	// the given action on the specified resource. The resource and action
+	// strings follow the format defined by the authorization policy
+	// (e.g., resource="documents", action="read").
+	//
+	// Implementations may check against an in-memory permission list,
+	// consult an external policy engine, or delegate to an RBAC system.
+	HasPermission(resource, action string) bool
 }
 
 // TokenValidator validates authentication tokens and extracts the identity
@@ -152,6 +168,171 @@ func (b *BasicIdentity) Claims() map[string]any {
 		copied[k] = v
 	}
 	return copied
+}
+
+// HasPermission always returns false for BasicIdentity. BasicIdentity is a
+// transport-level type used for deserializing identity from propagated
+// headers; it does not carry permission information. Use [ServiceIdentity]
+// or [UserIdentity] for authorization decisions.
+func (b *BasicIdentity) HasPermission(resource, action string) bool {
+	return false
+}
+
+// Permission represents an authorization grant for a specific resource and
+// action. Permissions are attached to identities and checked via
+// [Identity.HasPermission] to make authorization decisions.
+//
+// Example permissions:
+//
+//	Permission{Resource: "documents", Action: "read"}
+//	Permission{Resource: "users", Action: "delete"}
+//	Permission{Resource: "*", Action: "*"}  // wildcard — full access
+type Permission struct {
+	// Resource is the resource being accessed (e.g., "documents", "users",
+	// "agents"). The wildcard "*" matches all resources.
+	Resource string
+
+	// Action is the operation being performed (e.g., "read", "write",
+	// "delete", "execute"). The wildcard "*" matches all actions.
+	Action string
+}
+
+// ServiceIdentity represents a platform service or agent authenticated via
+// service account credentials. It carries service-specific metadata
+// (service name, Kubernetes namespace) and an explicit list of permissions
+// that define what the service is authorized to do.
+//
+// ServiceIdentity is immutable after creation.
+type ServiceIdentity struct {
+	id          string
+	serviceName string
+	namespace   string
+	claims      map[string]any
+	permissions []Permission
+}
+
+// NewServiceIdentity creates a new ServiceIdentity for a platform service.
+// The serviceName identifies the service (e.g., "nexus-gateway"), and
+// namespace is the Kubernetes namespace or deployment environment.
+// Claims and permissions are defensively copied to ensure immutability.
+func NewServiceIdentity(id, serviceName, namespace string, claims map[string]any, permissions []Permission) *ServiceIdentity {
+	copiedClaims := make(map[string]any, len(claims))
+	for k, v := range claims {
+		copiedClaims[k] = v
+	}
+	copiedPerms := make([]Permission, len(permissions))
+	copy(copiedPerms, permissions)
+	return &ServiceIdentity{
+		id:          id,
+		serviceName: serviceName,
+		namespace:   namespace,
+		claims:      copiedClaims,
+		permissions: copiedPerms,
+	}
+}
+
+// ID returns the unique identifier of the service identity.
+func (s *ServiceIdentity) ID() string { return s.id }
+
+// Type returns IdentityTypeService.
+func (s *ServiceIdentity) Type() IdentityType { return IdentityTypeService }
+
+// Claims returns a shallow copy of the service identity's claims.
+func (s *ServiceIdentity) Claims() map[string]any {
+	copied := make(map[string]any, len(s.claims))
+	for k, v := range s.claims {
+		copied[k] = v
+	}
+	return copied
+}
+
+// HasPermission checks whether this service identity has been granted the
+// specified permission. Supports wildcard matching: a permission with
+// Resource="*" matches any resource, and Action="*" matches any action.
+func (s *ServiceIdentity) HasPermission(resource, action string) bool {
+	return hasPermission(s.permissions, resource, action)
+}
+
+// ServiceName returns the name of the service (e.g., "nexus-gateway").
+func (s *ServiceIdentity) ServiceName() string { return s.serviceName }
+
+// Namespace returns the Kubernetes namespace or deployment environment
+// of the service.
+func (s *ServiceIdentity) Namespace() string { return s.namespace }
+
+// UserIdentity represents a human user authenticated via external
+// credentials (OAuth2, OIDC, SAML, JWT). It carries user-specific
+// metadata (email, display name) and permissions derived from the
+// user's roles.
+//
+// UserIdentity is immutable after creation.
+type UserIdentity struct {
+	id          string
+	email       string
+	displayName string
+	claims      map[string]any
+	permissions []Permission
+}
+
+// NewUserIdentity creates a new UserIdentity for a human user.
+// Claims and permissions are defensively copied to ensure immutability.
+func NewUserIdentity(id, email, displayName string, claims map[string]any, permissions []Permission) *UserIdentity {
+	copiedClaims := make(map[string]any, len(claims))
+	for k, v := range claims {
+		copiedClaims[k] = v
+	}
+	copiedPerms := make([]Permission, len(permissions))
+	copy(copiedPerms, permissions)
+	return &UserIdentity{
+		id:          id,
+		email:       email,
+		displayName: displayName,
+		claims:      copiedClaims,
+		permissions: copiedPerms,
+	}
+}
+
+// ID returns the unique identifier of the user (typically a UUID from the
+// identity provider).
+func (u *UserIdentity) ID() string { return u.id }
+
+// Type returns IdentityTypeUser.
+func (u *UserIdentity) Type() IdentityType { return IdentityTypeUser }
+
+// Claims returns a shallow copy of the user identity's claims.
+func (u *UserIdentity) Claims() map[string]any {
+	copied := make(map[string]any, len(u.claims))
+	for k, v := range u.claims {
+		copied[k] = v
+	}
+	return copied
+}
+
+// HasPermission checks whether this user identity has been granted the
+// specified permission. Supports wildcard matching: a permission with
+// Resource="*" matches any resource, and Action="*" matches any action.
+func (u *UserIdentity) HasPermission(resource, action string) bool {
+	return hasPermission(u.permissions, resource, action)
+}
+
+// Email returns the user's email address.
+func (u *UserIdentity) Email() string { return u.email }
+
+// DisplayName returns the user's display name.
+func (u *UserIdentity) DisplayName() string { return u.displayName }
+
+// hasPermission is a shared helper that checks whether a permission list
+// grants access to the given resource and action. Supports wildcard "*"
+// for both resource and action fields.
+func hasPermission(permissions []Permission, resource, action string) bool {
+	for _, p := range permissions {
+		resourceMatch := p.Resource == "*" || p.Resource == resource
+		actionMatch := p.Action == "*" || p.Action == action
+		if resourceMatch && actionMatch {
+			return true
+		}
+	}
+	return false
 }
 
 // CallerInfo records the identity of a service in the call chain.
