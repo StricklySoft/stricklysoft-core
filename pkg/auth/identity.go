@@ -25,11 +25,15 @@
 // gRPC metadata.
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // IdentityType represents the type of authenticated identity.
 // The platform distinguishes between human users, platform services,
-// and AI agents, as each has different authorization semantics.
+// AI agents, and system processes, as each has different authorization
+// semantics.
 type IdentityType string
 
 const (
@@ -83,7 +87,7 @@ type Identity interface {
 	// For agents, this is the agent instance identifier.
 	ID() string
 
-	// Type returns the category of identity (user, service, or agent).
+	// Type returns the category of identity (user, service, agent, or system).
 	Type() IdentityType
 
 	// Claims returns the identity's claims as a map. Claims include
@@ -154,7 +158,7 @@ func (b *BasicIdentity) ID() string {
 	return b.id
 }
 
-// Type returns the identity type (user, service, or agent).
+// Type returns the identity type (user, service, agent, or system).
 func (b *BasicIdentity) Type() IdentityType {
 	return b.idType
 }
@@ -215,7 +219,16 @@ type ServiceIdentity struct {
 // The serviceName identifies the service (e.g., "nexus-gateway"), and
 // namespace is the Kubernetes namespace or deployment environment.
 // Claims and permissions are defensively copied to ensure immutability.
-func NewServiceIdentity(id, serviceName, namespace string, claims map[string]any, permissions []Permission) *ServiceIdentity {
+//
+// Returns an error if id or serviceName is empty, as these are required
+// for authorization and audit purposes.
+func NewServiceIdentity(id, serviceName, namespace string, claims map[string]any, permissions []Permission) (*ServiceIdentity, error) {
+	if id == "" {
+		return nil, errors.New("auth: service identity id must not be empty")
+	}
+	if serviceName == "" {
+		return nil, errors.New("auth: service identity serviceName must not be empty")
+	}
 	copiedClaims := make(map[string]any, len(claims))
 	for k, v := range claims {
 		copiedClaims[k] = v
@@ -228,7 +241,7 @@ func NewServiceIdentity(id, serviceName, namespace string, claims map[string]any
 		namespace:   namespace,
 		claims:      copiedClaims,
 		permissions: copiedPerms,
-	}
+	}, nil
 }
 
 // ID returns the unique identifier of the service identity.
@@ -260,6 +273,16 @@ func (s *ServiceIdentity) ServiceName() string { return s.serviceName }
 // of the service.
 func (s *ServiceIdentity) Namespace() string { return s.namespace }
 
+// Permissions returns a copy of the service identity's permission list.
+// The returned slice is a defensive copy; callers may safely modify it
+// without affecting the identity. This is useful for audit logging and
+// policy introspection.
+func (s *ServiceIdentity) Permissions() []Permission {
+	copied := make([]Permission, len(s.permissions))
+	copy(copied, s.permissions)
+	return copied
+}
+
 // UserIdentity represents a human user authenticated via external
 // credentials (OAuth2, OIDC, SAML, JWT). It carries user-specific
 // metadata (email, display name) and permissions derived from the
@@ -276,7 +299,16 @@ type UserIdentity struct {
 
 // NewUserIdentity creates a new UserIdentity for a human user.
 // Claims and permissions are defensively copied to ensure immutability.
-func NewUserIdentity(id, email, displayName string, claims map[string]any, permissions []Permission) *UserIdentity {
+//
+// Returns an error if id or email is empty, as these are required
+// for authorization and audit purposes.
+func NewUserIdentity(id, email, displayName string, claims map[string]any, permissions []Permission) (*UserIdentity, error) {
+	if id == "" {
+		return nil, errors.New("auth: user identity id must not be empty")
+	}
+	if email == "" {
+		return nil, errors.New("auth: user identity email must not be empty")
+	}
 	copiedClaims := make(map[string]any, len(claims))
 	for k, v := range claims {
 		copiedClaims[k] = v
@@ -289,7 +321,7 @@ func NewUserIdentity(id, email, displayName string, claims map[string]any, permi
 		displayName: displayName,
 		claims:      copiedClaims,
 		permissions: copiedPerms,
-	}
+	}, nil
 }
 
 // ID returns the unique identifier of the user (typically a UUID from the
@@ -320,6 +352,16 @@ func (u *UserIdentity) Email() string { return u.email }
 
 // DisplayName returns the user's display name.
 func (u *UserIdentity) DisplayName() string { return u.displayName }
+
+// Permissions returns a copy of the user identity's permission list.
+// The returned slice is a defensive copy; callers may safely modify it
+// without affecting the identity. This is useful for audit logging and
+// policy introspection.
+func (u *UserIdentity) Permissions() []Permission {
+	copied := make([]Permission, len(u.permissions))
+	copy(copied, u.permissions)
+	return copied
+}
 
 // hasPermission is a shared helper that checks whether a permission list
 // grants access to the given resource and action. Supports wildcard "*"
