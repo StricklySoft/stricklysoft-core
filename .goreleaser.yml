@@ -53,11 +53,16 @@ archives:
       - docs/*
 
 # Checksum configuration - REQUIRED for verification
+# Since this is a library (no binary builds), extra_files ensures that
+# checksums.txt is generated with hashes for key project files.
+# Go modules also use sum.golang.org for integrity, but providing checksums
+# gives consumers an additional independent verification path.
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
-  # Include extra files in checksum
-  extra_files: []
+  extra_files:
+    - glob: ./go.mod
+    - glob: ./LICENSE
 
 # Changelog configuration with grouping by commit type
 changelog:
@@ -102,6 +107,23 @@ changelog:
     - title: "🔧 Other Changes"
       order: 999
 
+# Signing configuration using cosign (Sigstore)
+# Uses keyless signing with GitHub Actions OIDC — no private keys to manage.
+# The signing identity is tied to the GitHub Actions workflow run and is
+# recorded in the Sigstore transparency log (Rekor) for auditability.
+# Requires: cosign installed in CI, id-token: write permission for OIDC.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+    artifacts: checksum
+
 # GitHub Release configuration
 release:
   github:
@@ -127,9 +149,19 @@ release:
 
     ### Verification
 
-    Verify checksums:
+    Verify file integrity with checksums:
     ```bash
     sha256sum -c checksums.txt
+    ```
+
+    Verify release signature with [cosign](https://docs.sigstore.dev/cosign/overview/) (Sigstore):
+    ```bash
+    cosign verify-blob \
+      --signature checksums.txt.sig \
+      --certificate checksums.txt.pem \
+      --certificate-identity-regexp "github.com/StricklySoft/stricklysoft-core" \
+      --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+      checksums.txt
     ```
 
   # Release notes footer
@@ -143,8 +175,11 @@ release:
   # Extra files to upload to the release
   extra_files: []
 
-  # Make latest only for stable releases (not prereleases)
-  make_latest: true
+  # Let GitHub determine "Latest" based on release date and pre-release status.
+  # Setting make_latest to true would override GitHub's default behavior and
+  # mark pre-releases as "Latest", which is incorrect. Omitting this field
+  # (or not sending it to the API) lets GitHub use its default logic: only
+  # stable (non-prerelease) releases are marked as "Latest".
 
   # Replace existing draft releases
   replace_existing_draft: true
