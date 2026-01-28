@@ -15,10 +15,10 @@
 //
 //	pending → running → completed
 //	                  → failed
-//	                  → cancelled
+//	                  → canceled
 //	                  → timeout
 //
-// Once an execution reaches a terminal state (completed, failed, cancelled,
+// Once an execution reaches a terminal state (completed, failed, canceled,
 // timeout), it cannot transition to another state. The [Execution.IsTerminal]
 // method identifies terminal states.
 package models
@@ -60,9 +60,9 @@ const (
 	// are recorded in [Execution.ErrorMessage].
 	ExecutionStatusFailed ExecutionStatus = "failed"
 
-	// ExecutionStatusCancelled indicates the execution was cancelled by a
+	// ExecutionStatusCanceled indicates the execution was canceled by a
 	// user or system action before completion. This is a terminal state.
-	ExecutionStatusCancelled ExecutionStatus = "cancelled"
+	ExecutionStatusCanceled ExecutionStatus = "canceled"
 
 	// ExecutionStatusTimeout indicates the execution exceeded its allowed
 	// time limit and was terminated. This is a terminal state.
@@ -79,7 +79,7 @@ func (s ExecutionStatus) Valid() bool {
 	switch s {
 	case ExecutionStatusPending, ExecutionStatusRunning,
 		ExecutionStatusCompleted, ExecutionStatusFailed,
-		ExecutionStatusCancelled, ExecutionStatusTimeout:
+		ExecutionStatusCanceled, ExecutionStatusTimeout:
 		return true
 	default:
 		return false
@@ -91,7 +91,7 @@ func (s ExecutionStatus) Valid() bool {
 func (s ExecutionStatus) IsTerminal() bool {
 	switch s {
 	case ExecutionStatusCompleted, ExecutionStatusFailed,
-		ExecutionStatusCancelled, ExecutionStatusTimeout:
+		ExecutionStatusCanceled, ExecutionStatusTimeout:
 		return true
 	default:
 		return false
@@ -240,7 +240,7 @@ func (e *Execution) Validate() error {
 }
 
 // IsTerminal reports whether the execution has reached a final state from
-// which no further transitions are possible (completed, failed, cancelled,
+// which no further transitions are possible (completed, failed, canceled,
 // or timeout).
 func (e *Execution) IsTerminal() bool {
 	return e.Status.IsTerminal()

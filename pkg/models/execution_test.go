@@ -32,7 +32,7 @@ func TestExecutionStatus_String(t *testing.T) {
 		{name: "running", status: ExecutionStatusRunning, expected: "running"},
 		{name: "completed", status: ExecutionStatusCompleted, expected: "completed"},
 		{name: "failed", status: ExecutionStatusFailed, expected: "failed"},
-		{name: "cancelled", status: ExecutionStatusCancelled, expected: "cancelled"},
+		{name: "canceled", status: ExecutionStatusCanceled, expected: "canceled"},
 		{name: "timeout", status: ExecutionStatusTimeout, expected: "timeout"},
 		{name: "custom", status: ExecutionStatus("custom"), expected: "custom"},
 	}
@@ -55,7 +55,7 @@ func TestExecutionStatus_Valid(t *testing.T) {
 		{name: "running is valid", status: ExecutionStatusRunning, expected: true},
 		{name: "completed is valid", status: ExecutionStatusCompleted, expected: true},
 		{name: "failed is valid", status: ExecutionStatusFailed, expected: true},
-		{name: "cancelled is valid", status: ExecutionStatusCancelled, expected: true},
+		{name: "canceled is valid", status: ExecutionStatusCanceled, expected: true},
 		{name: "timeout is valid", status: ExecutionStatusTimeout, expected: true},
 		{name: "empty is invalid", status: ExecutionStatus(""), expected: false},
 		{name: "unknown is invalid", status: ExecutionStatus("paused"), expected: false},
@@ -79,7 +79,7 @@ func TestExecutionStatus_IsTerminal(t *testing.T) {
 		{name: "running is not terminal", status: ExecutionStatusRunning, expected: false},
 		{name: "completed is terminal", status: ExecutionStatusCompleted, expected: true},
 		{name: "failed is terminal", status: ExecutionStatusFailed, expected: true},
-		{name: "cancelled is terminal", status: ExecutionStatusCancelled, expected: true},
+		{name: "canceled is terminal", status: ExecutionStatusCanceled, expected: true},
 		{name: "timeout is terminal", status: ExecutionStatusTimeout, expected: true},
 		{name: "unknown is not terminal", status: ExecutionStatus("paused"), expected: false},
 	}
@@ -324,7 +324,7 @@ func TestValidate_AllStatuses(t *testing.T) {
 		ExecutionStatusRunning,
 		ExecutionStatusCompleted,
 		ExecutionStatusFailed,
-		ExecutionStatusCancelled,
+		ExecutionStatusCanceled,
 		ExecutionStatusTimeout,
 	}
 	for _, status := range statuses {
@@ -384,9 +384,9 @@ func TestIsTerminal_FailedExecution(t *testing.T) {
 
 func TestIsTerminal_CancelledExecution(t *testing.T) {
 	exec := mustNewExecution(t, "user-1", "task", "ns")
-	exec.Status = ExecutionStatusCancelled
+	exec.Status = ExecutionStatusCanceled
 	if !exec.IsTerminal() {
-		t.Error("cancelled execution should be terminal")
+		t.Error("canceled execution should be terminal")
 	}
 }
 
