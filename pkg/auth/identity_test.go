@@ -14,6 +14,7 @@ func TestIdentityType_String(t *testing.T) {
 		{name: "user type", idType: IdentityTypeUser, expected: "user"},
 		{name: "service type", idType: IdentityTypeService, expected: "service"},
 		{name: "agent type", idType: IdentityTypeAgent, expected: "agent"},
+		{name: "system type", idType: IdentityTypeSystem, expected: "system"},
 		{name: "custom type", idType: IdentityType("custom"), expected: "custom"},
 	}
 	for _, tt := range tests {
@@ -34,6 +35,7 @@ func TestIdentityType_Valid(t *testing.T) {
 		{name: "user is valid", idType: IdentityTypeUser, expected: true},
 		{name: "service is valid", idType: IdentityTypeService, expected: true},
 		{name: "agent is valid", idType: IdentityTypeAgent, expected: true},
+		{name: "system is valid", idType: IdentityTypeSystem, expected: true},
 		{name: "empty is invalid", idType: IdentityType(""), expected: false},
 		{name: "unknown is invalid", idType: IdentityType("robot"), expected: false},
 	}
@@ -91,8 +93,10 @@ func TestNewBasicIdentity_NilClaims(t *testing.T) {
 	}
 }
 
-// Verify BasicIdentity implements the Identity interface at compile time.
+// Verify concrete types implement the Identity interface at compile time.
 var _ Identity = (*BasicIdentity)(nil)
+var _ Identity = (*ServiceIdentity)(nil)
+var _ Identity = (*UserIdentity)(nil)
 
 func TestBasicIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
 	identity := NewBasicIdentity("user-1", IdentityTypeUser, map[string]any{"key": "original"})
@@ -211,5 +215,384 @@ func TestCallChain_AppendCaller_Immutable(t *testing.T) {
 	}
 	if extended.OriginalType != IdentityTypeUser {
 		t.Errorf("extended.OriginalType = %q, want %q", extended.OriginalType, IdentityTypeUser)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BasicIdentity.HasPermission
+// ---------------------------------------------------------------------------
+
+func TestBasicIdentity_HasPermission_AlwaysFalse(t *testing.T) {
+	identity := NewBasicIdentity("user-1", IdentityTypeUser, map[string]any{"role": "admin"})
+
+	// BasicIdentity is a transport-level type and should never grant permissions.
+	if identity.HasPermission("documents", "read") {
+		t.Error("BasicIdentity.HasPermission() should always return false")
+	}
+	if identity.HasPermission("*", "*") {
+		t.Error("BasicIdentity.HasPermission() should return false even for wildcards")
+	}
+	if identity.HasPermission("", "") {
+		t.Error("BasicIdentity.HasPermission() should return false for empty strings")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ServiceIdentity
+// ---------------------------------------------------------------------------
+
+func TestNewServiceIdentity(t *testing.T) {
+	claims := map[string]any{"env": "production", "cluster": "us-east-1"}
+	perms := []Permission{
+		{Resource: "documents", Action: "read"},
+		{Resource: "documents", Action: "write"},
+	}
+	identity := NewServiceIdentity("svc-123", "nexus-gateway", "platform", claims, perms)
+
+	if identity.ID() != "svc-123" {
+		t.Errorf("ID() = %q, want %q", identity.ID(), "svc-123")
+	}
+	if identity.Type() != IdentityTypeService {
+		t.Errorf("Type() = %q, want %q", identity.Type(), IdentityTypeService)
+	}
+	if identity.ServiceName() != "nexus-gateway" {
+		t.Errorf("ServiceName() = %q, want %q", identity.ServiceName(), "nexus-gateway")
+	}
+	if identity.Namespace() != "platform" {
+		t.Errorf("Namespace() = %q, want %q", identity.Namespace(), "platform")
+	}
+	if len(identity.Claims()) != 2 {
+		t.Errorf("Claims() has %d entries, want 2", len(identity.Claims()))
+	}
+	if identity.Claims()["env"] != "production" {
+		t.Errorf("Claims()[env] = %v, want %q", identity.Claims()["env"], "production")
+	}
+}
+
+func TestNewServiceIdentity_ClaimsDefensivelyCopied(t *testing.T) {
+	claims := map[string]any{"key": "original"}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", claims, nil)
+
+	// Mutating the input map should not affect the identity.
+	claims["key"] = "mutated"
+	claims["injected"] = "value"
+
+	if identity.Claims()["key"] != "original" {
+		t.Error("input claims mutation leaked into ServiceIdentity")
+	}
+	if _, exists := identity.Claims()["injected"]; exists {
+		t.Error("injected claim key leaked into ServiceIdentity")
+	}
+}
+
+func TestServiceIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
+	identity := NewServiceIdentity("svc-1", "svc", "ns", map[string]any{"key": "original"}, nil)
+
+	first := identity.Claims()
+	first["key"] = "mutated"
+	first["injected"] = "attack"
+
+	second := identity.Claims()
+	if second["key"] != "original" {
+		t.Errorf("Claims() mutation leaked: key = %q, want %q", second["key"], "original")
+	}
+	if _, exists := second["injected"]; exists {
+		t.Error("Claims() mutation leaked: injected key should not exist")
+	}
+}
+
+func TestNewServiceIdentity_PermissionsDefensivelyCopied(t *testing.T) {
+	perms := []Permission{{Resource: "docs", Action: "read"}}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, perms)
+
+	// Mutating the input slice should not affect the identity.
+	perms[0] = Permission{Resource: "HACKED", Action: "HACKED"}
+
+	if identity.HasPermission("HACKED", "HACKED") {
+		t.Error("input permissions mutation leaked into ServiceIdentity")
+	}
+	if !identity.HasPermission("docs", "read") {
+		t.Error("original permission should still be present")
+	}
+}
+
+func TestNewServiceIdentity_NilClaimsAndPermissions(t *testing.T) {
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, nil)
+
+	if identity.Claims() == nil {
+		t.Error("Claims() returned nil, expected empty map")
+	}
+	if len(identity.Claims()) != 0 {
+		t.Errorf("Claims() has %d entries, want 0", len(identity.Claims()))
+	}
+	if identity.HasPermission("anything", "anything") {
+		t.Error("HasPermission should return false with no permissions")
+	}
+}
+
+func TestServiceIdentity_HasPermission_ExactMatch(t *testing.T) {
+	perms := []Permission{
+		{Resource: "documents", Action: "read"},
+		{Resource: "users", Action: "delete"},
+	}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, perms)
+
+	if !identity.HasPermission("documents", "read") {
+		t.Error("expected permission for documents:read")
+	}
+	if !identity.HasPermission("users", "delete") {
+		t.Error("expected permission for users:delete")
+	}
+	if identity.HasPermission("documents", "delete") {
+		t.Error("should not have permission for documents:delete")
+	}
+	if identity.HasPermission("users", "read") {
+		t.Error("should not have permission for users:read")
+	}
+}
+
+func TestServiceIdentity_HasPermission_WildcardResource(t *testing.T) {
+	perms := []Permission{{Resource: "*", Action: "read"}}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, perms)
+
+	if !identity.HasPermission("documents", "read") {
+		t.Error("wildcard resource should match documents:read")
+	}
+	if !identity.HasPermission("users", "read") {
+		t.Error("wildcard resource should match users:read")
+	}
+	if identity.HasPermission("documents", "write") {
+		t.Error("wildcard resource should not match documents:write")
+	}
+}
+
+func TestServiceIdentity_HasPermission_WildcardAction(t *testing.T) {
+	perms := []Permission{{Resource: "documents", Action: "*"}}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, perms)
+
+	if !identity.HasPermission("documents", "read") {
+		t.Error("wildcard action should match documents:read")
+	}
+	if !identity.HasPermission("documents", "write") {
+		t.Error("wildcard action should match documents:write")
+	}
+	if !identity.HasPermission("documents", "delete") {
+		t.Error("wildcard action should match documents:delete")
+	}
+	if identity.HasPermission("users", "read") {
+		t.Error("wildcard action should not match users:read")
+	}
+}
+
+func TestServiceIdentity_HasPermission_FullWildcard(t *testing.T) {
+	perms := []Permission{{Resource: "*", Action: "*"}}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, perms)
+
+	if !identity.HasPermission("documents", "read") {
+		t.Error("full wildcard should match documents:read")
+	}
+	if !identity.HasPermission("users", "delete") {
+		t.Error("full wildcard should match users:delete")
+	}
+	if !identity.HasPermission("anything", "anything") {
+		t.Error("full wildcard should match anything:anything")
+	}
+}
+
+func TestServiceIdentity_HasPermission_NoMatch(t *testing.T) {
+	perms := []Permission{{Resource: "documents", Action: "read"}}
+	identity := NewServiceIdentity("svc-1", "svc", "ns", nil, perms)
+
+	if identity.HasPermission("secrets", "read") {
+		t.Error("should not have permission for secrets:read")
+	}
+	if identity.HasPermission("documents", "execute") {
+		t.Error("should not have permission for documents:execute")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UserIdentity
+// ---------------------------------------------------------------------------
+
+func TestNewUserIdentity(t *testing.T) {
+	claims := map[string]any{"org": "stricklysoft", "tier": "enterprise"}
+	perms := []Permission{
+		{Resource: "projects", Action: "read"},
+		{Resource: "projects", Action: "write"},
+	}
+	identity := NewUserIdentity("usr-456", "admin@stricklysoft.io", "Admin User", claims, perms)
+
+	if identity.ID() != "usr-456" {
+		t.Errorf("ID() = %q, want %q", identity.ID(), "usr-456")
+	}
+	if identity.Type() != IdentityTypeUser {
+		t.Errorf("Type() = %q, want %q", identity.Type(), IdentityTypeUser)
+	}
+	if identity.Email() != "admin@stricklysoft.io" {
+		t.Errorf("Email() = %q, want %q", identity.Email(), "admin@stricklysoft.io")
+	}
+	if identity.DisplayName() != "Admin User" {
+		t.Errorf("DisplayName() = %q, want %q", identity.DisplayName(), "Admin User")
+	}
+	if len(identity.Claims()) != 2 {
+		t.Errorf("Claims() has %d entries, want 2", len(identity.Claims()))
+	}
+	if identity.Claims()["org"] != "stricklysoft" {
+		t.Errorf("Claims()[org] = %v, want %q", identity.Claims()["org"], "stricklysoft")
+	}
+}
+
+func TestNewUserIdentity_ClaimsDefensivelyCopied(t *testing.T) {
+	claims := map[string]any{"key": "original"}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", claims, nil)
+
+	claims["key"] = "mutated"
+	claims["injected"] = "value"
+
+	if identity.Claims()["key"] != "original" {
+		t.Error("input claims mutation leaked into UserIdentity")
+	}
+	if _, exists := identity.Claims()["injected"]; exists {
+		t.Error("injected claim key leaked into UserIdentity")
+	}
+}
+
+func TestUserIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", map[string]any{"key": "original"}, nil)
+
+	first := identity.Claims()
+	first["key"] = "mutated"
+	first["injected"] = "attack"
+
+	second := identity.Claims()
+	if second["key"] != "original" {
+		t.Errorf("Claims() mutation leaked: key = %q, want %q", second["key"], "original")
+	}
+	if _, exists := second["injected"]; exists {
+		t.Error("Claims() mutation leaked: injected key should not exist")
+	}
+}
+
+func TestNewUserIdentity_PermissionsDefensivelyCopied(t *testing.T) {
+	perms := []Permission{{Resource: "projects", Action: "read"}}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	perms[0] = Permission{Resource: "HACKED", Action: "HACKED"}
+
+	if identity.HasPermission("HACKED", "HACKED") {
+		t.Error("input permissions mutation leaked into UserIdentity")
+	}
+	if !identity.HasPermission("projects", "read") {
+		t.Error("original permission should still be present")
+	}
+}
+
+func TestNewUserIdentity_NilClaimsAndPermissions(t *testing.T) {
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, nil)
+
+	if identity.Claims() == nil {
+		t.Error("Claims() returned nil, expected empty map")
+	}
+	if len(identity.Claims()) != 0 {
+		t.Errorf("Claims() has %d entries, want 0", len(identity.Claims()))
+	}
+	if identity.HasPermission("anything", "anything") {
+		t.Error("HasPermission should return false with no permissions")
+	}
+}
+
+func TestUserIdentity_HasPermission_ExactMatch(t *testing.T) {
+	perms := []Permission{
+		{Resource: "projects", Action: "read"},
+		{Resource: "reports", Action: "generate"},
+	}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	if !identity.HasPermission("projects", "read") {
+		t.Error("expected permission for projects:read")
+	}
+	if !identity.HasPermission("reports", "generate") {
+		t.Error("expected permission for reports:generate")
+	}
+	if identity.HasPermission("projects", "delete") {
+		t.Error("should not have permission for projects:delete")
+	}
+}
+
+func TestUserIdentity_HasPermission_WildcardResource(t *testing.T) {
+	perms := []Permission{{Resource: "*", Action: "read"}}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	if !identity.HasPermission("projects", "read") {
+		t.Error("wildcard resource should match projects:read")
+	}
+	if !identity.HasPermission("users", "read") {
+		t.Error("wildcard resource should match users:read")
+	}
+	if identity.HasPermission("projects", "write") {
+		t.Error("wildcard resource should not match projects:write")
+	}
+}
+
+func TestUserIdentity_HasPermission_WildcardAction(t *testing.T) {
+	perms := []Permission{{Resource: "projects", Action: "*"}}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	if !identity.HasPermission("projects", "read") {
+		t.Error("wildcard action should match projects:read")
+	}
+	if !identity.HasPermission("projects", "delete") {
+		t.Error("wildcard action should match projects:delete")
+	}
+	if identity.HasPermission("users", "read") {
+		t.Error("wildcard action should not match users:read")
+	}
+}
+
+func TestUserIdentity_HasPermission_FullWildcard(t *testing.T) {
+	perms := []Permission{{Resource: "*", Action: "*"}}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	if !identity.HasPermission("anything", "anything") {
+		t.Error("full wildcard should match anything:anything")
+	}
+}
+
+func TestUserIdentity_HasPermission_NoMatch(t *testing.T) {
+	perms := []Permission{{Resource: "projects", Action: "read"}}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	if identity.HasPermission("secrets", "read") {
+		t.Error("should not have permission for secrets:read")
+	}
+}
+
+func TestUserIdentity_HasPermission_MultiplePermissions(t *testing.T) {
+	perms := []Permission{
+		{Resource: "projects", Action: "read"},
+		{Resource: "projects", Action: "write"},
+		{Resource: "users", Action: "read"},
+		{Resource: "agents", Action: "*"},
+	}
+	identity := NewUserIdentity("usr-1", "a@b.com", "A", nil, perms)
+
+	if !identity.HasPermission("projects", "read") {
+		t.Error("expected projects:read")
+	}
+	if !identity.HasPermission("projects", "write") {
+		t.Error("expected projects:write")
+	}
+	if !identity.HasPermission("users", "read") {
+		t.Error("expected users:read")
+	}
+	if !identity.HasPermission("agents", "execute") {
+		t.Error("expected agents:execute via wildcard action")
+	}
+	if identity.HasPermission("users", "delete") {
+		t.Error("should not have users:delete")
+	}
+	if identity.HasPermission("secrets", "read") {
+		t.Error("should not have secrets:read")
 	}
 }
