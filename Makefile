@@ -1,4 +1,4 @@
-.PHONY: all build test test-integration lint fmt vet clean help
+.PHONY: all build test test-integration test-e2e lint fmt vet clean deps deps-update generate help
 
 # Go parameters
 GOCMD=go
@@ -17,6 +17,7 @@ BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 # Directories
 PKG_DIR=./pkg/...
 INTERNAL_DIR=./internal/...
+TESTS_DIR=./tests/...
 
 all: lint test build ## Run lint, test, and build
 
@@ -27,7 +28,10 @@ test: ## Run unit tests
 	$(GOTEST) -v -race -short $(PKG_DIR) $(INTERNAL_DIR)
 
 test-integration: ## Run integration tests (requires Docker)
-	$(GOTEST) -v -race -tags=integration $(PKG_DIR)
+	$(GOTEST) -v -race -tags=integration $(PKG_DIR) $(TESTS_DIR)
+
+test-e2e: ## Run end-to-end tests (requires Docker)
+	$(GOTEST) -v -race -tags=e2e $(TESTS_DIR)
 
 test-coverage: ## Run tests with coverage
 	$(GOTEST) -v -race -coverprofile=coverage.out -covermode=atomic $(PKG_DIR) $(INTERNAL_DIR)

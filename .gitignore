@@ -1,0 +1,206 @@
+# =============================================================================
+# StricklySoft Core SDK - .gitignore
+# =============================================================================
+# This file specifies intentionally untracked files that Git should ignore.
+# https://git-scm.com/docs/gitignore
+# =============================================================================
+
+# =============================================================================
+# Go Build Artifacts
+# =============================================================================
+
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output of go coverage tool
+*.out
+coverage.out
+coverage.html
+coverage.xml
+coverage-*.out
+
+# Go workspace files (Go 1.18+)
+go.work
+go.work.sum
+
+# Dependency directories (if using vendoring)
+vendor/
+
+# =============================================================================
+# IDE and Editor Files
+# =============================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs (GoLand, IntelliJ)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*.swn
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# =============================================================================
+# Operating System Files
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.directory
+
+# =============================================================================
+# Build and Distribution
+# =============================================================================
+
+# Build output directories
+bin/
+dist/
+build/
+out/
+
+# GoReleaser
+dist/
+
+# =============================================================================
+# Testing
+# =============================================================================
+
+# Test output
+test-results/
+test-reports/
+junit.xml
+
+# Testcontainers
+.testcontainers/
+
+# Benchmark results
+*.bench
+
+# =============================================================================
+# Security - NEVER commit these files
+# =============================================================================
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Kubernetes secrets (local files)
+secrets.yaml
+secrets.yml
+*-secret.yaml
+*-secret.yml
+
+# AWS credentials
+.aws/
+credentials
+
+# GCP credentials
+*.json
+!package.json
+!tsconfig.json
+service-account.json
+gcp-credentials.json
+
+# HashiCorp Vault tokens
+.vault-token
+
+# =============================================================================
+# Logs and Temporary Files
+# =============================================================================
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache directories
+.cache/
+__pycache__/
+
+# =============================================================================
+# Documentation Build
+# =============================================================================
+
+# Generated documentation
+docs/_build/
+docs/site/
+site/
+
+# =============================================================================
+# Miscellaneous
+# =============================================================================
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Archive files (shouldn't be in repo)
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Local configuration overrides
+local.yaml
+local.yml
+config.local.yaml
+config.local.yml
