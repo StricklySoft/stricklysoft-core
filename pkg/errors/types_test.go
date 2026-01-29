@@ -4,11 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestError_Error(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  *Error
@@ -55,14 +58,14 @@ func TestError_Error(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.err.Error(); got != tt.want {
-				t.Errorf("Error.Error() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.err.Error())
 		})
 	}
 }
 
 func TestError_Unwrap(t *testing.T) {
+	t.Parallel()
 	cause := errors.New("underlying error")
 	err := &Error{
 		Code:    CodeInternal,
@@ -70,9 +73,7 @@ func TestError_Unwrap(t *testing.T) {
 		Cause:   cause,
 	}
 
-	if got := err.Unwrap(); got != cause {
-		t.Errorf("Error.Unwrap() = %v, want %v", got, cause)
-	}
+	assert.Equal(t, cause, err.Unwrap())
 
 	// Test error without cause
 	errNoCause := &Error{
@@ -80,12 +81,11 @@ func TestError_Unwrap(t *testing.T) {
 		Message: "invalid input",
 	}
 
-	if got := errNoCause.Unwrap(); got != nil {
-		t.Errorf("Error.Unwrap() = %v, want nil", got)
-	}
+	assert.Nil(t, errNoCause.Unwrap())
 }
 
 func TestError_Unwrap_ErrorsIs(t *testing.T) {
+	t.Parallel()
 	// Test that errors.Is works with wrapped errors
 	cause := errors.New("specific error")
 	err := &Error{
@@ -94,12 +94,11 @@ func TestError_Unwrap_ErrorsIs(t *testing.T) {
 		Cause:   cause,
 	}
 
-	if !errors.Is(err, cause) {
-		t.Error("errors.Is should find the cause in the error chain")
-	}
+	assert.True(t, errors.Is(err, cause), "errors.Is should find the cause in the error chain")
 }
 
 func TestError_Unwrap_ErrorsAs(t *testing.T) {
+	t.Parallel()
 	// Test that errors.As works with nested platform errors
 	innerErr := &Error{
 		Code:    CodeTimeout,
@@ -112,15 +111,12 @@ func TestError_Unwrap_ErrorsAs(t *testing.T) {
 	}
 
 	var target *Error
-	if !errors.As(outerErr, &target) {
-		t.Error("errors.As should find *Error in chain")
-	}
-	if target.Code != CodeInternal {
-		t.Errorf("errors.As found wrong error, got code %v, want %v", target.Code, CodeInternal)
-	}
+	require.True(t, errors.As(outerErr, &target), "errors.As should find *Error in chain")
+	assert.Equal(t, CodeInternal, target.Code)
 }
 
 func TestError_HTTPStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		code Code
@@ -173,15 +169,15 @@ func TestError_HTTPStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := &Error{Code: tt.code, Message: "test"}
-			if got := err.HTTPStatus(); got != tt.want {
-				t.Errorf("Error.HTTPStatus() for %v = %v, want %v", tt.code, got, tt.want)
-			}
+			assert.Equal(t, tt.want, err.HTTPStatus(), "Error.HTTPStatus() for %v", tt.code)
 		})
 	}
 }
 
 func TestError_WithDetails(t *testing.T) {
+	t.Parallel()
 	original := &Error{
 		Code:    CodeValidation,
 		Message: "validation failed",
@@ -192,28 +188,19 @@ func TestError_WithDetails(t *testing.T) {
 	modified := original.WithDetails(newDetails)
 
 	// Original should be unchanged
-	if _, ok := original.Details["reason"]; ok {
-		t.Error("WithDetails modified the original error")
-	}
+	assert.NotContains(t, original.Details, "reason", "WithDetails modified the original error")
 
 	// Modified should have both fields
-	if modified.Details["field"] != "email" {
-		t.Error("WithDetails did not preserve existing details")
-	}
-	if modified.Details["reason"] != "invalid format" {
-		t.Error("WithDetails did not add new details")
-	}
+	assert.Equal(t, "email", modified.Details["field"], "WithDetails did not preserve existing details")
+	assert.Equal(t, "invalid format", modified.Details["reason"], "WithDetails did not add new details")
 
 	// Code and Message should be preserved
-	if modified.Code != original.Code {
-		t.Error("WithDetails did not preserve Code")
-	}
-	if modified.Message != original.Message {
-		t.Error("WithDetails did not preserve Message")
-	}
+	assert.Equal(t, original.Code, modified.Code, "WithDetails did not preserve Code")
+	assert.Equal(t, original.Message, modified.Message, "WithDetails did not preserve Message")
 }
 
 func TestError_WithDetails_Overwrite(t *testing.T) {
+	t.Parallel()
 	original := &Error{
 		Code:    CodeValidation,
 		Message: "test",
@@ -222,15 +209,12 @@ func TestError_WithDetails_Overwrite(t *testing.T) {
 
 	modified := original.WithDetails(map[string]any{"key": "overwritten"})
 
-	if original.Details["key"] != "original" {
-		t.Error("WithDetails modified the original error")
-	}
-	if modified.Details["key"] != "overwritten" {
-		t.Error("WithDetails did not overwrite existing key")
-	}
+	assert.Equal(t, "original", original.Details["key"], "WithDetails modified the original error")
+	assert.Equal(t, "overwritten", modified.Details["key"], "WithDetails did not overwrite existing key")
 }
 
 func TestError_WithDetails_NilOriginal(t *testing.T) {
+	t.Parallel()
 	original := &Error{
 		Code:    CodeValidation,
 		Message: "test",
@@ -239,12 +223,11 @@ func TestError_WithDetails_NilOriginal(t *testing.T) {
 
 	modified := original.WithDetails(map[string]any{"key": "value"})
 
-	if modified.Details["key"] != "value" {
-		t.Error("WithDetails failed when original Details was nil")
-	}
+	assert.Equal(t, "value", modified.Details["key"], "WithDetails failed when original Details was nil")
 }
 
 func TestError_WithDetail(t *testing.T) {
+	t.Parallel()
 	original := &Error{
 		Code:    CodeValidation,
 		Message: "validation failed",
@@ -253,34 +236,26 @@ func TestError_WithDetail(t *testing.T) {
 	modified := original.WithDetail("field", "email")
 
 	// Original should be unchanged
-	if len(original.Details) > 0 {
-		t.Error("WithDetail modified the original error")
-	}
+	assert.Empty(t, original.Details, "WithDetail modified the original error")
 
 	// Modified should have the detail
-	if modified.Details["field"] != "email" {
-		t.Error("WithDetail did not add the detail")
-	}
+	assert.Equal(t, "email", modified.Details["field"], "WithDetail did not add the detail")
 }
 
 func TestError_WithDetail_Chaining(t *testing.T) {
+	t.Parallel()
 	err := New(CodeValidation, "validation failed").
 		WithDetail("field", "email").
 		WithDetail("reason", "invalid format").
 		WithDetail("value", "not-an-email")
 
-	if err.Details["field"] != "email" {
-		t.Error("Chained WithDetail failed for 'field'")
-	}
-	if err.Details["reason"] != "invalid format" {
-		t.Error("Chained WithDetail failed for 'reason'")
-	}
-	if err.Details["value"] != "not-an-email" {
-		t.Error("Chained WithDetail failed for 'value'")
-	}
+	assert.Equal(t, "email", err.Details["field"], "Chained WithDetail failed for 'field'")
+	assert.Equal(t, "invalid format", err.Details["reason"], "Chained WithDetail failed for 'reason'")
+	assert.Equal(t, "not-an-email", err.Details["value"], "Chained WithDetail failed for 'value'")
 }
 
 func TestError_Format(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		err      *Error
@@ -347,17 +322,17 @@ func TestError_Format(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := fmt.Sprintf(tt.format, tt.err)
 			for _, want := range tt.contains {
-				if !strings.Contains(got, want) {
-					t.Errorf("Format(%q) = %q, should contain %q", tt.format, got, want)
-				}
+				assert.Contains(t, got, want, "Format(%q) = %q, should contain %q", tt.format, got, want)
 			}
 		})
 	}
 }
 
 func TestError_Immutability(t *testing.T) {
+	t.Parallel()
 	// Verify that Error methods don't mutate the original
 	original := &Error{
 		Code:    CodeValidation,
@@ -378,13 +353,7 @@ func TestError_Immutability(t *testing.T) {
 	_ = original.WithDetail("another", "value")
 
 	// Verify nothing changed
-	if original.Code != origCode {
-		t.Error("Code was mutated")
-	}
-	if original.Message != origMsg {
-		t.Error("Message was mutated")
-	}
-	if len(original.Details) != origDetailsLen {
-		t.Error("Details was mutated")
-	}
+	assert.Equal(t, origCode, original.Code, "Code was mutated")
+	assert.Equal(t, origMsg, original.Message, "Message was mutated")
+	assert.Len(t, original.Details, origDetailsLen, "Details was mutated")
 }

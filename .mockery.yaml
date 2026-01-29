@@ -1,0 +1,48 @@
+# .mockery.yaml — Mockery v2 configuration for StricklySoft Core SDK.
+#
+# Generates testify/mock implementations for all SDK interfaces used
+# in unit and integration tests. Generated files are placed under
+# internal/testutil/mocks/ and MUST NOT be edited manually.
+#
+# Regenerate mocks after changing any interface signature:
+#   make mock-generate
+#
+# See https://vektra.github.io/mockery/latest/configuration/ for docs.
+
+with-expecter: true
+dir: "internal/testutil/mocks"
+outpkg: "mocks"
+mockname: "Mock{{.InterfaceName}}"
+filename: "mock_{{.InterfaceName | snakecase}}.go"
+packages:
+  github.com/StricklySoft/stricklysoft-core/pkg/lifecycle:
+    interfaces:
+      Agent:
+        config:
+          # Agent is the primary lifecycle interface. Mocking it allows tests
+          # to verify orchestration, health-check composition, and state
+          # management without spinning up real agents.
+  github.com/StricklySoft/stricklysoft-core/pkg/clients/postgres:
+    interfaces:
+      Pool:
+        config:
+          # Pool is the database connection pool interface wrapping pgxpool.
+          # Mocking it enables unit tests for Client without a live database.
+  github.com/StricklySoft/stricklysoft-core/pkg/auth:
+    interfaces:
+      Identity:
+        config:
+          # Identity represents an authenticated caller. Mocking it allows
+          # tests to inject arbitrary identity claims without building
+          # full BasicIdentity/ServiceIdentity/UserIdentity instances.
+      TokenValidator:
+        config:
+          # TokenValidator verifies authentication tokens. Mocking it
+          # enables middleware tests without a real token issuer.
+  github.com/StricklySoft/stricklysoft-core/pkg/config:
+    interfaces:
+      Validator:
+        config:
+          # Validator is the optional interface for custom config validation.
+          # Mocking it tests the loader's validation dispatch without
+          # coupling to specific config struct implementations.

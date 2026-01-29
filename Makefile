@@ -1,4 +1,4 @@
-.PHONY: all build test test-integration test-e2e lint fmt vet clean deps deps-update generate help
+.PHONY: all build test test-integration test-e2e lint fmt vet clean deps deps-update generate mock-generate mock-clean help
 
 # Go parameters
 GOCMD=go
@@ -60,6 +60,12 @@ deps-update: ## Update dependencies
 
 generate: ## Run go generate
 	$(GOCMD) generate $(PKG_DIR)
+
+mock-generate: ## Regenerate testify mocks via mockery
+	mockery
+
+mock-clean: ## Remove generated mock files
+	rm -f internal/testutil/mocks/mock_*.go
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'

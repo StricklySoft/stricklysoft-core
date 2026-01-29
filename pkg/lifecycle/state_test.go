@@ -2,6 +2,8 @@ package lifecycle
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // ===========================================================================
@@ -11,6 +13,7 @@ import (
 // TestState_String verifies that every State constant returns the expected
 // string representation via the String method.
 func TestState_String(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		state State
 		want  string
@@ -25,9 +28,8 @@ func TestState_String(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			if got := tt.state.String(); got != tt.want {
-				t.Errorf("State.String() = %q, want %q", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.state.String())
 		})
 	}
 }
@@ -40,15 +42,15 @@ func TestState_String(t *testing.T) {
 // as valid, and that invalid values (empty string, arbitrary strings) are
 // rejected.
 func TestState_Valid(t *testing.T) {
+	t.Parallel()
 	validStates := []State{
 		StateUnknown, StateStarting, StateRunning, StatePaused,
 		StateStopping, StateStopped, StateFailed,
 	}
 	for _, s := range validStates {
 		t.Run("valid_"+string(s), func(t *testing.T) {
-			if !s.Valid() {
-				t.Errorf("State(%q).Valid() = false, want true", s)
-			}
+			t.Parallel()
+			assert.True(t, s.Valid(), "State(%q).Valid() should be true", s)
 		})
 	}
 
@@ -59,9 +61,8 @@ func TestState_Valid(t *testing.T) {
 			name = "empty"
 		}
 		t.Run("invalid_"+name, func(t *testing.T) {
-			if s.Valid() {
-				t.Errorf("State(%q).Valid() = true, want false", s)
-			}
+			t.Parallel()
+			assert.False(t, s.Valid(), "State(%q).Valid() should be false", s)
 		})
 	}
 }
@@ -73,6 +74,7 @@ func TestState_Valid(t *testing.T) {
 // TestState_IsTerminal verifies that only Stopped and Failed are recognized
 // as terminal states, and all other states are non-terminal.
 func TestState_IsTerminal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		state    State
 		terminal bool
@@ -87,10 +89,8 @@ func TestState_IsTerminal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.state), func(t *testing.T) {
-			if got := tt.state.IsTerminal(); got != tt.terminal {
-				t.Errorf("State(%q).IsTerminal() = %v, want %v",
-					tt.state, got, tt.terminal)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.terminal, tt.state.IsTerminal())
 		})
 	}
 }
@@ -102,6 +102,7 @@ func TestState_IsTerminal(t *testing.T) {
 // TestValidTransition_AllValid verifies that every transition listed in the
 // validTransitions matrix is accepted by ValidTransition.
 func TestValidTransition_AllValid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		from State
 		to   State
@@ -131,10 +132,9 @@ func TestValidTransition_AllValid(t *testing.T) {
 	for _, tt := range tests {
 		name := string(tt.from) + "_to_" + string(tt.to)
 		t.Run(name, func(t *testing.T) {
-			if !ValidTransition(tt.from, tt.to) {
-				t.Errorf("ValidTransition(%q, %q) = false, want true",
-					tt.from, tt.to)
-			}
+			t.Parallel()
+			assert.True(t, ValidTransition(tt.from, tt.to),
+				"ValidTransition(%q, %q) should be true", tt.from, tt.to)
 		})
 	}
 }
@@ -142,6 +142,7 @@ func TestValidTransition_AllValid(t *testing.T) {
 // TestValidTransition_Invalid verifies that transitions not in the matrix
 // are rejected by ValidTransition.
 func TestValidTransition_Invalid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		from State
 		to   State
@@ -166,10 +167,9 @@ func TestValidTransition_Invalid(t *testing.T) {
 	for _, tt := range tests {
 		name := string(tt.from) + "_to_" + string(tt.to)
 		t.Run(name, func(t *testing.T) {
-			if ValidTransition(tt.from, tt.to) {
-				t.Errorf("ValidTransition(%q, %q) = true, want false",
-					tt.from, tt.to)
-			}
+			t.Parallel()
+			assert.False(t, ValidTransition(tt.from, tt.to),
+				"ValidTransition(%q, %q) should be false", tt.from, tt.to)
 		})
 	}
 }
@@ -177,16 +177,16 @@ func TestValidTransition_Invalid(t *testing.T) {
 // TestValidTransition_SameState verifies that transitioning from a state
 // to the same state is always rejected.
 func TestValidTransition_SameState(t *testing.T) {
+	t.Parallel()
 	states := []State{
 		StateUnknown, StateStarting, StateRunning, StatePaused,
 		StateStopping, StateStopped, StateFailed,
 	}
 	for _, s := range states {
 		t.Run(string(s), func(t *testing.T) {
-			if ValidTransition(s, s) {
-				t.Errorf("ValidTransition(%q, %q) = true, want false (same-state)",
-					s, s)
-			}
+			t.Parallel()
+			assert.False(t, ValidTransition(s, s),
+				"ValidTransition(%q, %q) should be false (same-state)", s, s)
 		})
 	}
 }
@@ -194,7 +194,7 @@ func TestValidTransition_SameState(t *testing.T) {
 // TestValidTransition_InvalidSourceState verifies that transitions from an
 // unrecognized state are rejected.
 func TestValidTransition_InvalidSourceState(t *testing.T) {
-	if ValidTransition(State("nonexistent"), StateStarting) {
-		t.Error("ValidTransition from unrecognized state = true, want false")
-	}
+	t.Parallel()
+	assert.False(t, ValidTransition(State("nonexistent"), StateStarting),
+		"ValidTransition from unrecognized state should be false")
 }

@@ -3,261 +3,201 @@ package errors
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
 	err := New(CodeValidation, "invalid input")
 
-	if err.Code != CodeValidation {
-		t.Errorf("New().Code = %v, want %v", err.Code, CodeValidation)
-	}
-	if err.Message != "invalid input" {
-		t.Errorf("New().Message = %v, want %v", err.Message, "invalid input")
-	}
-	if err.Cause != nil {
-		t.Error("New().Cause should be nil")
-	}
-	if err.Details != nil {
-		t.Error("New().Details should be nil")
-	}
+	assert.Equal(t, CodeValidation, err.Code)
+	assert.Equal(t, "invalid input", err.Message)
+	assert.Nil(t, err.Cause, "New().Cause should be nil")
+	assert.Nil(t, err.Details, "New().Details should be nil")
 }
 
 func TestNewf(t *testing.T) {
+	t.Parallel()
 	err := Newf(CodeNotFoundUser, "user %q not found in namespace %s", "user-123", "default")
 
-	if err.Code != CodeNotFoundUser {
-		t.Errorf("Newf().Code = %v, want %v", err.Code, CodeNotFoundUser)
-	}
+	assert.Equal(t, CodeNotFoundUser, err.Code)
 	want := `user "user-123" not found in namespace default`
-	if err.Message != want {
-		t.Errorf("Newf().Message = %v, want %v", err.Message, want)
-	}
+	assert.Equal(t, want, err.Message)
 }
 
 func TestNewf_NoArgs(t *testing.T) {
+	t.Parallel()
 	err := Newf(CodeInternal, "static message")
 
-	if err.Message != "static message" {
-		t.Errorf("Newf().Message = %v, want %v", err.Message, "static message")
-	}
+	assert.Equal(t, "static message", err.Message)
 }
 
 func TestWrap(t *testing.T) {
+	t.Parallel()
 	cause := errors.New("connection refused")
 	err := Wrap(cause, CodeInternalDatabase, "failed to connect to database")
 
-	if err.Code != CodeInternalDatabase {
-		t.Errorf("Wrap().Code = %v, want %v", err.Code, CodeInternalDatabase)
-	}
-	if err.Message != "failed to connect to database" {
-		t.Errorf("Wrap().Message = %v, want %v", err.Message, "failed to connect to database")
-	}
-	if err.Cause != cause {
-		t.Errorf("Wrap().Cause = %v, want %v", err.Cause, cause)
-	}
+	assert.Equal(t, CodeInternalDatabase, err.Code)
+	assert.Equal(t, "failed to connect to database", err.Message)
+	assert.Equal(t, cause, err.Cause)
 }
 
 func TestWrap_NilError(t *testing.T) {
+	t.Parallel()
 	err := Wrap(nil, CodeInternal, "should not create error")
 
-	if err != nil {
-		t.Error("Wrap(nil, ...) should return nil")
-	}
+	assert.Nil(t, err, "Wrap(nil, ...) should return nil")
 }
 
 func TestWrap_PlatformError(t *testing.T) {
+	t.Parallel()
 	inner := New(CodeTimeout, "timeout")
 	outer := Wrap(inner, CodeInternal, "operation failed")
 
-	if outer.Cause != inner {
-		t.Error("Wrap should preserve platform error as cause")
-	}
+	assert.Equal(t, inner, outer.Cause, "Wrap should preserve platform error as cause")
 
 	// Should be able to unwrap to find inner error
 	var target *Error
-	if !errors.As(outer, &target) {
-		t.Error("errors.As should find *Error")
-	}
+	require.True(t, errors.As(outer, &target), "errors.As should find *Error")
 }
 
 func TestWrapf(t *testing.T) {
+	t.Parallel()
 	cause := errors.New("connection refused")
 	err := Wrapf(cause, CodeInternalDatabase, "failed to connect to %s:%d", "localhost", 5432)
 
-	if err.Code != CodeInternalDatabase {
-		t.Errorf("Wrapf().Code = %v, want %v", err.Code, CodeInternalDatabase)
-	}
+	assert.Equal(t, CodeInternalDatabase, err.Code)
 	want := "failed to connect to localhost:5432"
-	if err.Message != want {
-		t.Errorf("Wrapf().Message = %v, want %v", err.Message, want)
-	}
-	if err.Cause != cause {
-		t.Error("Wrapf should preserve cause")
-	}
+	assert.Equal(t, want, err.Message)
+	assert.Equal(t, cause, err.Cause, "Wrapf should preserve cause")
 }
 
 func TestWrapf_NilError(t *testing.T) {
+	t.Parallel()
 	err := Wrapf(nil, CodeInternal, "should not create error: %v", "ignored")
 
-	if err != nil {
-		t.Error("Wrapf(nil, ...) should return nil")
-	}
+	assert.Nil(t, err, "Wrapf(nil, ...) should return nil")
 }
 
 func TestValidation(t *testing.T) {
+	t.Parallel()
 	err := Validation("email is required")
 
-	if err.Code != CodeValidation {
-		t.Errorf("Validation().Code = %v, want %v", err.Code, CodeValidation)
-	}
-	if err.Message != "email is required" {
-		t.Errorf("Validation().Message = %v, want %v", err.Message, "email is required")
-	}
+	assert.Equal(t, CodeValidation, err.Code)
+	assert.Equal(t, "email is required", err.Message)
 }
 
 func TestValidationf(t *testing.T) {
+	t.Parallel()
 	err := Validationf("field %q must be at least %d characters", "password", 8)
 
-	if err.Code != CodeValidation {
-		t.Errorf("Validationf().Code = %v, want %v", err.Code, CodeValidation)
-	}
+	assert.Equal(t, CodeValidation, err.Code)
 	want := `field "password" must be at least 8 characters`
-	if err.Message != want {
-		t.Errorf("Validationf().Message = %v, want %v", err.Message, want)
-	}
+	assert.Equal(t, want, err.Message)
 }
 
 func TestNotFound(t *testing.T) {
+	t.Parallel()
 	err := NotFound("resource not found")
 
-	if err.Code != CodeNotFound {
-		t.Errorf("NotFound().Code = %v, want %v", err.Code, CodeNotFound)
-	}
-	if err.Message != "resource not found" {
-		t.Errorf("NotFound().Message = %v, want %v", err.Message, "resource not found")
-	}
+	assert.Equal(t, CodeNotFound, err.Code)
+	assert.Equal(t, "resource not found", err.Message)
 }
 
 func TestNotFoundf(t *testing.T) {
+	t.Parallel()
 	err := NotFoundf("user %q not found", "user-456")
 
-	if err.Code != CodeNotFound {
-		t.Errorf("NotFoundf().Code = %v, want %v", err.Code, CodeNotFound)
-	}
+	assert.Equal(t, CodeNotFound, err.Code)
 	want := `user "user-456" not found`
-	if err.Message != want {
-		t.Errorf("NotFoundf().Message = %v, want %v", err.Message, want)
-	}
+	assert.Equal(t, want, err.Message)
 }
 
 func TestUnauthorized(t *testing.T) {
+	t.Parallel()
 	err := Unauthorized("invalid token")
 
-	if err.Code != CodeAuthentication {
-		t.Errorf("Unauthorized().Code = %v, want %v", err.Code, CodeAuthentication)
-	}
-	if err.Message != "invalid token" {
-		t.Errorf("Unauthorized().Message = %v, want %v", err.Message, "invalid token")
-	}
+	assert.Equal(t, CodeAuthentication, err.Code)
+	assert.Equal(t, "invalid token", err.Message)
 }
 
 func TestForbidden(t *testing.T) {
+	t.Parallel()
 	err := Forbidden("access denied")
 
-	if err.Code != CodeAuthorization {
-		t.Errorf("Forbidden().Code = %v, want %v", err.Code, CodeAuthorization)
-	}
-	if err.Message != "access denied" {
-		t.Errorf("Forbidden().Message = %v, want %v", err.Message, "access denied")
-	}
+	assert.Equal(t, CodeAuthorization, err.Code)
+	assert.Equal(t, "access denied", err.Message)
 }
 
 func TestConflict(t *testing.T) {
+	t.Parallel()
 	err := Conflict("resource already exists")
 
-	if err.Code != CodeConflict {
-		t.Errorf("Conflict().Code = %v, want %v", err.Code, CodeConflict)
-	}
-	if err.Message != "resource already exists" {
-		t.Errorf("Conflict().Message = %v, want %v", err.Message, "resource already exists")
-	}
+	assert.Equal(t, CodeConflict, err.Code)
+	assert.Equal(t, "resource already exists", err.Message)
 }
 
 func TestInternal(t *testing.T) {
+	t.Parallel()
 	err := Internal("unexpected error")
 
-	if err.Code != CodeInternal {
-		t.Errorf("Internal().Code = %v, want %v", err.Code, CodeInternal)
-	}
-	if err.Message != "unexpected error" {
-		t.Errorf("Internal().Message = %v, want %v", err.Message, "unexpected error")
-	}
+	assert.Equal(t, CodeInternal, err.Code)
+	assert.Equal(t, "unexpected error", err.Message)
 }
 
 func TestInternalf(t *testing.T) {
+	t.Parallel()
 	err := Internalf("failed to process request: %v", "disk full")
 
-	if err.Code != CodeInternal {
-		t.Errorf("Internalf().Code = %v, want %v", err.Code, CodeInternal)
-	}
+	assert.Equal(t, CodeInternal, err.Code)
 	want := "failed to process request: disk full"
-	if err.Message != want {
-		t.Errorf("Internalf().Message = %v, want %v", err.Message, want)
-	}
+	assert.Equal(t, want, err.Message)
 }
 
 func TestUnavailable(t *testing.T) {
+	t.Parallel()
 	err := Unavailable("service temporarily unavailable")
 
-	if err.Code != CodeUnavailable {
-		t.Errorf("Unavailable().Code = %v, want %v", err.Code, CodeUnavailable)
-	}
-	if err.Message != "service temporarily unavailable" {
-		t.Errorf("Unavailable().Message = %v, want %v", err.Message, "service temporarily unavailable")
-	}
+	assert.Equal(t, CodeUnavailable, err.Code)
+	assert.Equal(t, "service temporarily unavailable", err.Message)
 }
 
 func TestTimeout(t *testing.T) {
+	t.Parallel()
 	err := Timeout("operation timed out")
 
-	if err.Code != CodeTimeout {
-		t.Errorf("Timeout().Code = %v, want %v", err.Code, CodeTimeout)
-	}
-	if err.Message != "operation timed out" {
-		t.Errorf("Timeout().Message = %v, want %v", err.Message, "operation timed out")
-	}
+	assert.Equal(t, CodeTimeout, err.Code)
+	assert.Equal(t, "operation timed out", err.Message)
 }
 
 func TestFromError_Nil(t *testing.T) {
+	t.Parallel()
 	err := FromError(nil)
 
-	if err != nil {
-		t.Error("FromError(nil) should return nil")
-	}
+	assert.Nil(t, err, "FromError(nil) should return nil")
 }
 
 func TestFromError_PlatformError(t *testing.T) {
+	t.Parallel()
 	original := New(CodeValidation, "original error")
 	err := FromError(original)
 
-	if err != original {
-		t.Error("FromError should return platform error as-is")
-	}
+	assert.Equal(t, original, err, "FromError should return platform error as-is")
 }
 
 func TestFromError_StandardError(t *testing.T) {
+	t.Parallel()
 	stdErr := errors.New("standard error")
 	err := FromError(stdErr)
 
-	if err.Code != CodeInternal {
-		t.Errorf("FromError().Code = %v, want %v", err.Code, CodeInternal)
-	}
-	if err.Cause != stdErr {
-		t.Error("FromError should wrap standard error as cause")
-	}
+	assert.Equal(t, CodeInternal, err.Code)
+	assert.Equal(t, stdErr, err.Cause, "FromError should wrap standard error as cause")
 }
 
 func TestFromError_WrappedPlatformError(t *testing.T) {
+	t.Parallel()
 	// Create a platform error wrapped in fmt.Errorf
 	platformErr := New(CodeNotFound, "not found")
 	wrappedErr := errors.Join(errors.New("context"), platformErr)
@@ -265,12 +205,11 @@ func TestFromError_WrappedPlatformError(t *testing.T) {
 	err := FromError(wrappedErr)
 
 	// Should extract the platform error from the chain
-	if err.Code != CodeNotFound {
-		t.Errorf("FromError should extract platform error from chain, got code %v", err.Code)
-	}
+	assert.Equal(t, CodeNotFound, err.Code, "FromError should extract platform error from chain")
 }
 
 func TestConstructorReturnTypes(t *testing.T) {
+	t.Parallel()
 	// Verify all constructors return *Error (not error interface)
 	// This enables method chaining like .WithDetail()
 
