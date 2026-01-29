@@ -851,16 +851,11 @@ func TestLoader_Load_Validator_StdlibError(t *testing.T) {
 // TestLoader_Load_Validator_NotCalledOnRequiredFailure verifies that
 // the Validator interface is NOT called when required tag validation fails.
 func TestLoader_Load_Validator_NotCalledOnRequiredFailure(t *testing.T) {
-	type cfg struct {
-		Name string `env:"NAME" required:"true"`
-	}
-	type validatedCfg struct {
-		cfg
-	}
-
-	// The validatableConfig type has required:"true" on Name... but we
-	// need a different approach. Let's just verify that the error code
-	// is CodeValidationRequired (not CodeValidation from Validator).
+	// Verify that the error code is CodeValidationRequired (not
+	// CodeValidation from a Validator). The requiredConfig type does
+	// not implement Validator, so if the code is CodeValidationRequired
+	// we know the required tag check ran and returned before any
+	// Validator could be called.
 	var c requiredConfig
 	err := New().Load(&c)
 	if err == nil {
