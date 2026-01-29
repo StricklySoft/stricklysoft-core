@@ -417,14 +417,19 @@ func finishSpan(span trace.Span, err error) {
 }
 
 // wrapError converts a database error to a platform [*sserr.Error] with an
-// appropriate error code. It distinguishes between timeout/cancellation
-// errors and general database errors to enable callers to make retry
-// decisions via [sserr.IsTimeout] and [sserr.IsRetryable].
+// appropriate error code. It distinguishes between timeout errors and general
+// database errors to enable callers to make retry decisions via
+// [sserr.IsTimeout] and [sserr.IsRetryable].
+//
+// [context.DeadlineExceeded] is classified as [sserr.CodeTimeoutDatabase]
+// (retryable). [context.Canceled] is classified as [sserr.CodeInternalDatabase]
+// (not retryable) because cancellation indicates the caller abandoned the
+// operation, and retrying an intentionally canceled request is wasteful.
 func wrapError(err error, message string) *sserr.Error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.DeadlineExceeded) {
 		return sserr.Wrap(err, sserr.CodeTimeoutDatabase, message)
 	}
 	return sserr.Wrap(err, sserr.CodeInternalDatabase, message)

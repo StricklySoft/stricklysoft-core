@@ -503,14 +503,15 @@ func TestWrapError_DeadlineExceeded(t *testing.T) {
 }
 
 // TestWrapError_ContextCanceled verifies that wrapError classifies
-// context.Canceled as CodeTimeoutDatabase.
+// context.Canceled as CodeInternalDatabase (not retryable), because
+// cancellation means the caller abandoned the operation intentionally.
 func TestWrapError_ContextCanceled(t *testing.T) {
 	result := wrapError(context.Canceled, "query canceled")
 	if result == nil {
 		t.Fatal("wrapError() returned nil, want *sserr.Error")
 	}
-	if result.Code != sserr.CodeTimeoutDatabase {
-		t.Errorf("code = %q, want %q", result.Code, sserr.CodeTimeoutDatabase)
+	if result.Code != sserr.CodeInternalDatabase {
+		t.Errorf("code = %q, want %q", result.Code, sserr.CodeInternalDatabase)
 	}
 	if !errors.Is(result, context.Canceled) {
 		t.Error("wrapError() result does not unwrap to context.Canceled")

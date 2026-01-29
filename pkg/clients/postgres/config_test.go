@@ -305,6 +305,72 @@ func TestConfig_Validate_MaxConns_LessThan_MinConns(t *testing.T) {
 	}
 }
 
+func TestConfig_Validate_NegativeMaxConns(t *testing.T) {
+	cfg := Config{Database: "mydb", User: "myuser", MaxConns: -1, MinConns: 0}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for negative max_conns, got nil")
+	}
+	if !strings.Contains(err.Error(), "max_conns must be >= 1") {
+		t.Errorf("error = %q, want message about max_conns", err.Error())
+	}
+}
+
+func TestConfig_Validate_NegativeMinConns(t *testing.T) {
+	cfg := Config{Database: "mydb", User: "myuser", MinConns: -1}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for negative min_conns, got nil")
+	}
+	if !strings.Contains(err.Error(), "min_conns must be >= 0") {
+		t.Errorf("error = %q, want message about min_conns", err.Error())
+	}
+}
+
+func TestConfig_Validate_NegativeConnectTimeout(t *testing.T) {
+	cfg := Config{Database: "mydb", User: "myuser", ConnectTimeout: -1 * time.Second}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for negative connect_timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "connect_timeout must not be negative") {
+		t.Errorf("error = %q, want message about connect_timeout", err.Error())
+	}
+}
+
+func TestConfig_Validate_NegativeMaxConnLifetime(t *testing.T) {
+	cfg := Config{Database: "mydb", User: "myuser", MaxConnLifetime: -1 * time.Hour}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for negative max_conn_lifetime, got nil")
+	}
+	if !strings.Contains(err.Error(), "max_conn_lifetime must not be negative") {
+		t.Errorf("error = %q, want message about max_conn_lifetime", err.Error())
+	}
+}
+
+func TestConfig_Validate_NegativeMaxConnIdleTime(t *testing.T) {
+	cfg := Config{Database: "mydb", User: "myuser", MaxConnIdleTime: -1 * time.Minute}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for negative max_conn_idle_time, got nil")
+	}
+	if !strings.Contains(err.Error(), "max_conn_idle_time must not be negative") {
+		t.Errorf("error = %q, want message about max_conn_idle_time", err.Error())
+	}
+}
+
+func TestConfig_Validate_NegativeHealthCheckPeriod(t *testing.T) {
+	cfg := Config{Database: "mydb", User: "myuser", HealthCheckPeriod: -1 * time.Second}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for negative health_check_period, got nil")
+	}
+	if !strings.Contains(err.Error(), "health_check_period must not be negative") {
+		t.Errorf("error = %q, want message about health_check_period", err.Error())
+	}
+}
+
 func TestConfig_Validate_SSLRootCert_NotFound(t *testing.T) {
 	cfg := Config{
 		Database:    "mydb",
@@ -367,6 +433,36 @@ func TestConfig_Validate_URI_InvalidURI(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "URI is invalid") {
 		t.Errorf("error = %q, want message about invalid URI", err.Error())
+	}
+}
+
+func TestConfig_Validate_URI_InvalidScheme(t *testing.T) {
+	cfg := Config{URI: "mysql://user:pass@host:3306/mydb"}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for non-postgres URI scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), "URI scheme must be") {
+		t.Errorf("error = %q, want message about URI scheme", err.Error())
+	}
+}
+
+func TestConfig_Validate_URI_NoScheme(t *testing.T) {
+	cfg := Config{URI: "not-a-postgres-uri"}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for URI without scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), "URI scheme must be") {
+		t.Errorf("error = %q, want message about URI scheme", err.Error())
+	}
+}
+
+func TestConfig_Validate_URI_PostgresqlScheme(t *testing.T) {
+	// The "postgresql://" scheme variant should also be accepted.
+	cfg := Config{URI: "postgresql://user:pass@localhost:5432/mydb"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error for postgresql:// scheme: %v", err)
 	}
 }
 
@@ -650,6 +746,32 @@ func TestTruncateSQL_Long(t *testing.T) {
 func TestTruncateSQL_Empty(t *testing.T) {
 	if got := truncateSQL(""); got != "" {
 		t.Errorf("truncateSQL(\"\") = %q, want empty string", got)
+	}
+}
+
+func TestTruncateSQL_MultiByte(t *testing.T) {
+	// Build a string of 101 multi-byte runes (each '日' is 3 bytes in UTF-8).
+	// Byte-based truncation at position 100 would land in the middle of a
+	// 3-byte character, producing invalid UTF-8.
+	sql := strings.Repeat("日", maxSQLTruncateLen+1)
+	got := truncateSQL(sql)
+
+	// Should truncate to exactly maxSQLTruncateLen runes + "...".
+	runes := []rune(got)
+	wantRuneLen := maxSQLTruncateLen + 3 // 100 runes + len("...")
+	if len(runes) != wantRuneLen {
+		t.Errorf("truncateSQL() rune count = %d, want %d", len(runes), wantRuneLen)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("truncateSQL() = %q, want suffix '...'", got)
+	}
+
+	// Verify the result is valid UTF-8 (would fail if bytes were split).
+	for i, r := range got {
+		if r == '\uFFFD' {
+			t.Errorf("truncateSQL() contains replacement character at byte %d, indicates invalid UTF-8", i)
+			break
+		}
 	}
 }
 

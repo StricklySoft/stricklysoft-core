@@ -351,16 +351,23 @@ func DefaultConfig() *Config {
 //   - Port must be between 1 and 65535
 //   - SSLMode must be a recognized value
 //   - SSLRootCert (if set) must be a readable file
+//   - MaxConns must be >= 1
+//   - MinConns must be >= 0
 //   - MaxConns must be >= MinConns
+//   - Duration fields must not be negative
 func (c *Config) Validate() error {
 	// Apply pool and timeout defaults regardless of URI vs structured.
 	c.applyPoolDefaults()
 
 	if c.URI != "" {
-		// URI-based config: only validate the URI is parseable.
-		_, err := url.Parse(c.URI)
+		// URI-based config: validate that the URI is parseable and uses
+		// a recognized PostgreSQL scheme.
+		u, err := url.Parse(c.URI)
 		if err != nil {
 			return fmt.Errorf("postgres: config URI is invalid: %w", err)
+		}
+		if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+			return fmt.Errorf("postgres: config URI scheme must be postgres:// or postgresql://, got %q", u.Scheme)
 		}
 		return nil
 	}
@@ -392,8 +399,26 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("postgres: config ssl_root_cert %q is not accessible: %w", c.SSLRootCert, err)
 		}
 	}
+	if c.MaxConns < 1 {
+		return fmt.Errorf("postgres: config max_conns must be >= 1, got %d", c.MaxConns)
+	}
+	if c.MinConns < 0 {
+		return fmt.Errorf("postgres: config min_conns must be >= 0, got %d", c.MinConns)
+	}
 	if c.MaxConns < c.MinConns {
 		return fmt.Errorf("postgres: config max_conns (%d) must be >= min_conns (%d)", c.MaxConns, c.MinConns)
+	}
+	if c.ConnectTimeout < 0 {
+		return fmt.Errorf("postgres: config connect_timeout must not be negative, got %v", c.ConnectTimeout)
+	}
+	if c.MaxConnLifetime < 0 {
+		return fmt.Errorf("postgres: config max_conn_lifetime must not be negative, got %v", c.MaxConnLifetime)
+	}
+	if c.MaxConnIdleTime < 0 {
+		return fmt.Errorf("postgres: config max_conn_idle_time must not be negative, got %v", c.MaxConnIdleTime)
+	}
+	if c.HealthCheckPeriod < 0 {
+		return fmt.Errorf("postgres: config health_check_period must not be negative, got %v", c.HealthCheckPeriod)
 	}
 
 	return nil
@@ -516,12 +541,14 @@ func (c *Config) tlsConfig() (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// truncateSQL truncates a SQL statement to [maxSQLTruncateLen] characters
+// truncateSQL truncates a SQL statement to [maxSQLTruncateLen] runes
 // for safe inclusion in OpenTelemetry trace spans. Truncated statements are
-// suffixed with "..." to indicate truncation.
+// suffixed with "..." to indicate truncation. The truncation is rune-aware
+// to avoid splitting multi-byte UTF-8 characters.
 func truncateSQL(sql string) string {
-	if len(sql) <= maxSQLTruncateLen {
+	runes := []rune(sql)
+	if len(runes) <= maxSQLTruncateLen {
 		return sql
 	}
-	return sql[:maxSQLTruncateLen] + "..."
+	return string(runes[:maxSQLTruncateLen]) + "..."
 }
