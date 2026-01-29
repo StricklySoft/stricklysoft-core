@@ -11,15 +11,13 @@ import (
 	sserr "github.com/StricklySoft/stricklysoft-core/pkg/errors"
 )
 
-// mustBuildAgent is a test helper that creates a BaseAgent with the given
-// id, name, and version via the builder, failing the test if Build returns
-// an error.
-func mustBuildAgent(t *testing.T, id, name, version string) *BaseAgent {
+// mustBuildAgent is a test helper that creates a BaseAgent with default test
+// identity values via the builder, failing the test if Build returns an error.
+func mustBuildAgent(t *testing.T) *BaseAgent {
 	t.Helper()
-	agent, err := NewBaseAgentBuilder(id, name, version).Build()
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").Build()
 	if err != nil {
-		t.Fatalf("NewBaseAgentBuilder(%q, %q, %q).Build() error: %v",
-			id, name, version, err)
+		t.Fatalf("NewBaseAgentBuilder().Build() error: %v", err)
 	}
 	return agent
 }
@@ -29,7 +27,7 @@ func mustBuildAgent(t *testing.T, id, name, version string) *BaseAgent {
 // returns an error.
 func mustStartAgent(t *testing.T) *BaseAgent {
 	t.Helper()
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	if err := agent.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
 	}
@@ -42,7 +40,7 @@ func mustStartAgent(t *testing.T) *BaseAgent {
 
 // TestBaseAgent_ID verifies that ID returns the value set during construction.
 func TestBaseAgent_ID(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	if got := agent.ID(); got != "agent-001" {
 		t.Errorf("ID() = %q, want %q", got, "agent-001")
 	}
@@ -51,7 +49,7 @@ func TestBaseAgent_ID(t *testing.T) {
 // TestBaseAgent_Name verifies that Name returns the value set during
 // construction.
 func TestBaseAgent_Name(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	if got := agent.Name(); got != "test-agent" {
 		t.Errorf("Name() = %q, want %q", got, "test-agent")
 	}
@@ -60,7 +58,7 @@ func TestBaseAgent_Name(t *testing.T) {
 // TestBaseAgent_Version verifies that Version returns the value set during
 // construction.
 func TestBaseAgent_Version(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	if got := agent.Version(); got != "1.0.0" {
 		t.Errorf("Version() = %q, want %q", got, "1.0.0")
 	}
@@ -73,7 +71,7 @@ func TestBaseAgent_Version(t *testing.T) {
 // TestBaseAgent_State_InitialValue verifies that a newly constructed agent
 // starts in StateUnknown.
 func TestBaseAgent_State_InitialValue(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	if got := agent.State(); got != StateUnknown {
 		t.Errorf("State() = %q, want %q", got, StateUnknown)
 	}
@@ -82,7 +80,7 @@ func TestBaseAgent_State_InitialValue(t *testing.T) {
 // TestBaseAgent_SetState_ValidTransition verifies that SetState succeeds
 // for an allowed transition.
 func TestBaseAgent_SetState_ValidTransition(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	// Unknown -> Starting is a valid transition.
 	if err := agent.SetState(StateStarting); err != nil {
@@ -96,7 +94,7 @@ func TestBaseAgent_SetState_ValidTransition(t *testing.T) {
 // TestBaseAgent_SetState_InvalidTransition verifies that SetState returns
 // a CodeConflict error for a disallowed transition.
 func TestBaseAgent_SetState_InvalidTransition(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	// Unknown -> Running is not a valid transition.
 	err := agent.SetState(StateRunning)
@@ -207,7 +205,7 @@ func TestBaseAgent_SetState_HandlerPanicRecovery(t *testing.T) {
 // TestBaseAgent_Capabilities_Empty verifies that Capabilities returns an
 // empty (non-nil) slice when no capabilities are registered.
 func TestBaseAgent_Capabilities_Empty(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	caps := agent.Capabilities()
 	if caps == nil {
 		t.Error("Capabilities() = nil, want non-nil empty slice")
@@ -307,7 +305,7 @@ func TestBaseAgent_Info(t *testing.T) {
 // TestBaseAgent_Info_NoStartedAtBeforeStart verifies that Info returns nil
 // StartedAt and zero Uptime before the agent has been started.
 func TestBaseAgent_Info_NoStartedAtBeforeStart(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 	info := agent.Info()
 
 	if info.StartedAt != nil {
@@ -366,7 +364,7 @@ func TestBaseAgent_Health_Running(t *testing.T) {
 // TestBaseAgent_Health_NotRunning verifies that Health returns an error
 // when the agent is not in StateRunning.
 func TestBaseAgent_Health_NotRunning(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	err := agent.Health(context.Background())
 	if err == nil {
@@ -406,7 +404,7 @@ func TestBaseAgent_Health_Paused(t *testing.T) {
 // TestBaseAgent_Start_Success verifies that Start transitions the agent
 // from Unknown to Running.
 func TestBaseAgent_Start_Success(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	if err := agent.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
@@ -513,7 +511,7 @@ func TestBaseAgent_Start_InvalidState(t *testing.T) {
 // TestBaseAgent_Start_ContextCanceled verifies that Start with a canceled
 // context returns immediately without modifying state.
 func TestBaseAgent_Start_ContextCanceled(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately.
@@ -660,7 +658,7 @@ func TestBaseAgent_Stop_AlreadyStopped(t *testing.T) {
 // TestBaseAgent_Stop_InvalidState verifies that Stop from Unknown returns
 // a conflict error (Unknown cannot transition to Stopping).
 func TestBaseAgent_Stop_InvalidState(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	err := agent.Stop(context.Background())
 	if err == nil {
@@ -915,7 +913,7 @@ func TestBaseAgent_FullLifecycle(t *testing.T) {
 // State() do not race with lifecycle operations. This test relies on the
 // -race detector.
 func TestBaseAgent_ConcurrentStateAccess(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	var wg sync.WaitGroup
 	ctx := context.Background()
@@ -943,7 +941,7 @@ func TestBaseAgent_ConcurrentStateAccess(t *testing.T) {
 // Stop calls do not race or corrupt state. Only one operation should
 // succeed; the other should receive a conflict error.
 func TestBaseAgent_ConcurrentStartStop(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	var wg sync.WaitGroup
 	ctx := context.Background()
@@ -1006,7 +1004,7 @@ func TestBaseAgent_ConcurrentInfo(t *testing.T) {
 // TestBaseAgent_ConcurrentSetState verifies that concurrent SetState calls
 // do not corrupt the agent's state. This test relies on the -race detector.
 func TestBaseAgent_ConcurrentSetState(t *testing.T) {
-	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustBuildAgent(t)
 
 	var wg sync.WaitGroup
 	// Multiple goroutines try to transition Unknown -> Starting.
