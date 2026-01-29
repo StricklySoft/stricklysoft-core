@@ -72,6 +72,13 @@ func main() {
 - [Observability](api/observability.md) -- OpenTelemetry tracing across
   the SDK
 
+### Guides
+
+- [Best Practices](best-practices.md) -- Error handling, resource
+  cleanup, context propagation, testing
+- [Troubleshooting](troubleshooting.md) -- Common errors, diagnostics,
+  Kubernetes-specific issues
+
 ### Examples
 
 - [Basic Agent](examples/basic-agent.md) -- Full agent with lifecycle,
