@@ -259,6 +259,60 @@ func TestBaseAgentBuilder_MultipleStateHandlers(t *testing.T) {
 	}
 }
 
+// ===========================================================================
+// Builder Capability Validation Tests
+// ===========================================================================
+
+// TestBaseAgentBuilder_Build_InvalidCapabilityEmptyName verifies that Build
+// returns a CodeValidation error when a registered capability has an empty name.
+func TestBaseAgentBuilder_Build_InvalidCapabilityEmptyName(t *testing.T) {
+	_, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithCapability(Capability{Name: "", Version: "1.0.0"}).
+		Build()
+	if err == nil {
+		t.Fatal("Build() expected error for capability with empty name, got nil")
+	}
+	if !sserr.IsValidation(err) {
+		t.Errorf("IsValidation() = false, want true for empty capability name")
+	}
+}
+
+// TestBaseAgentBuilder_Build_InvalidCapabilityEmptyVersion verifies that Build
+// returns a CodeValidation error when a registered capability has an empty version.
+func TestBaseAgentBuilder_Build_InvalidCapabilityEmptyVersion(t *testing.T) {
+	_, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithCapability(Capability{Name: "search", Version: ""}).
+		Build()
+	if err == nil {
+		t.Fatal("Build() expected error for capability with empty version, got nil")
+	}
+	if !sserr.IsValidation(err) {
+		t.Errorf("IsValidation() = false, want true for empty capability version")
+	}
+}
+
+// TestBaseAgentBuilder_Build_InvalidCapabilityViaWithCapabilities verifies
+// that Build validates capabilities added via WithCapabilities.
+func TestBaseAgentBuilder_Build_InvalidCapabilityViaWithCapabilities(t *testing.T) {
+	caps := []Capability{
+		{Name: "valid", Version: "1.0.0"},
+		{Name: "", Version: "1.0.0"}, // invalid
+	}
+	_, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithCapabilities(caps).
+		Build()
+	if err == nil {
+		t.Fatal("Build() expected error for invalid capability in batch, got nil")
+	}
+	if !sserr.IsValidation(err) {
+		t.Errorf("IsValidation() = false, want true for invalid capability in batch")
+	}
+}
+
+// ===========================================================================
+// Builder Logger Tests
+// ===========================================================================
+
 // TestBaseAgentBuilder_WithLogger verifies that a custom logger is used
 // by the agent.
 func TestBaseAgentBuilder_WithLogger(t *testing.T) {

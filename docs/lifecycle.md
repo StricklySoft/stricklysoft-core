@@ -187,8 +187,8 @@ They execute at specific points in the lifecycle:
 |-----------|--------------------------------------------|-----------------------|
 | OnStart   | After `Starting`, before `Running`         | Agent -> `Failed`     |
 | OnStop    | After `Stopping`, before `Stopped`         | Agent -> `Failed`     |
-| OnPause   | After transition to `Paused`               | Agent -> `Failed`     |
-| OnResume  | After transition back to `Running`         | Agent -> `Failed`     |
+| OnPause   | While still `Running`, before `Paused`     | Agent -> `Failed`     |
+| OnResume  | While still `Paused`, before `Running`     | Agent -> `Failed`     |
 
 ### Hook Execution Rules
 
@@ -199,6 +199,24 @@ They execute at specific points in the lifecycle:
    the error is wrapped with `CodeInternal`.
 4. Hooks may safely call read-only methods (`State()`, `Info()`) on the
    agent without causing deadlocks.
+
+### Hook Execution Order
+
+For `Start` and `Stop`, the agent transitions to a transient intermediate
+state (`Starting`, `Stopping`) before the hook runs, then transitions to
+the final state (`Running`, `Stopped`) after the hook succeeds.
+
+For `Pause` and `Resume`, the agent's state is validated (must be
+`Running` or `Paused` respectively) and the hook runs **before** the
+state transition occurs. This means:
+
+- The `OnPause` hook sees `StateRunning` when it executes
+- The `OnResume` hook sees `StatePaused` when it executes
+- External observers only see the final state (`Paused`, `Running`)
+  after the hook completes successfully
+
+This design ensures that hook failures do not leave the agent in an
+inconsistent state visible to external consumers.
 
 ## State Change Observers
 
@@ -238,7 +256,8 @@ type Capability struct {
 ### Construction
 
 Use `NewCapability()` for validated construction with defensive metadata
-copying:
+copying. Returns a `*sserr.Error` with `CodeValidation` if `Name` or
+`Version` is empty:
 
 ```go
 cap, err := lifecycle.NewCapability(
@@ -248,6 +267,14 @@ cap, err := lifecycle.NewCapability(
     map[string]string{"max_tokens": "8192", "provider": "anthropic"},
 )
 ```
+
+### Builder Validation
+
+Capabilities registered via `WithCapability()` or `WithCapabilities()`
+are validated during `Build()`. If any capability has an empty `Name` or
+`Version`, `Build()` returns a `CodeValidation` error. This ensures
+invalid capabilities are caught at construction time rather than at
+runtime.
 
 ### Defensive Copying
 
@@ -335,6 +362,9 @@ applicable.
 - All public methods are safe for concurrent use.
 - Lifecycle methods (`Start`, `Stop`, `Pause`, `Resume`) use `SetState`
   for atomic state transitions.
+- `Start` and `Stop` use `setStateLocked` to atomically update both
+  the state and `startedAt` under the same lock acquisition, preventing
+  a window where `Info()` could see `StateRunning` with nil `startedAt`.
 - Race condition tests run with `-race` flag in CI.
 
 ## Error Handling
@@ -414,10 +444,11 @@ func (ra *ResearchAgent) Health(ctx context.Context) error {
 ```
 pkg/lifecycle/
     state.go              State enum, transition matrix, ValidTransition()
-    capability.go         Capability struct, NewCapability(), Clone()
-    agent.go              Agent interface, AgentInfo, BaseAgent, BaseAgentBuilder
+    capability.go         Capability struct, NewCapability(), Clone(), validateCapability()
+    agent.go              Agent interface, AgentInfo, BaseAgent, lifecycle methods
+    agent_builder.go      BaseAgentBuilder (fluent API for constructing BaseAgent)
     state_test.go         State and transition tests
     capability_test.go    Capability construction and serialization tests
     agent_test.go         Agent lifecycle, concurrency, and integration tests
-    agent_builder_test.go Builder pattern and validation tests
+    agent_builder_test.go Builder pattern, validation, and capability tests
 ```

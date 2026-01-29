@@ -1,8 +1,7 @@
 package lifecycle
 
 import (
-	"errors"
-	"fmt"
+	sserr "github.com/StricklySoft/stricklysoft-core/pkg/errors"
 )
 
 // Capability describes a named capability that an agent supports. Capabilities
@@ -49,18 +48,21 @@ type Capability struct {
 }
 
 // NewCapability creates a new [Capability] with validated fields. The metadata
-// map is defensively copied to prevent external mutation. Returns an error if
-// name or version is empty.
+// map is defensively copied to prevent external mutation. Returns a
+// [*sserr.Error] with code [sserr.CodeValidation] if name or version is
+// empty.
 //
 // Example:
 //
 //	cap, err := lifecycle.NewCapability("code-generation", "2.0.0", "Generate code from prompts", nil)
 func NewCapability(name, version, description string, metadata map[string]string) (Capability, error) {
 	if name == "" {
-		return Capability{}, errors.New("lifecycle: capability name must not be empty")
+		return Capability{}, sserr.New(sserr.CodeValidation,
+			"lifecycle: capability name must not be empty")
 	}
 	if version == "" {
-		return Capability{}, fmt.Errorf("lifecycle: capability %q version must not be empty", name)
+		return Capability{}, sserr.Newf(sserr.CodeValidation,
+			"lifecycle: capability %q version must not be empty", name)
 	}
 
 	// Defensive copy of metadata to prevent external mutation.
@@ -78,6 +80,22 @@ func NewCapability(name, version, description string, metadata map[string]string
 		Description: description,
 		Metadata:    copied,
 	}, nil
+}
+
+// validateCapability checks that a Capability has non-empty Name and Version
+// fields. Returns a [*sserr.Error] with code [sserr.CodeValidation] if
+// validation fails. This is used by [BaseAgentBuilder.Build] to reject
+// invalid capabilities registered via [BaseAgentBuilder.WithCapability].
+func validateCapability(c Capability) error {
+	if c.Name == "" {
+		return sserr.New(sserr.CodeValidation,
+			"lifecycle: capability name must not be empty")
+	}
+	if c.Version == "" {
+		return sserr.Newf(sserr.CodeValidation,
+			"lifecycle: capability %q version must not be empty", c.Name)
+	}
+	return nil
 }
 
 // Clone returns a deep copy of the Capability, including a copy of the
