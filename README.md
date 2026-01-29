@@ -74,6 +74,11 @@ func main() {
 - [Data Models](docs/api/models.md)
 - [Observability](docs/api/observability.md)
 
+### Guides
+
+- [Best Practices](docs/best-practices.md)
+- [Troubleshooting](docs/troubleshooting.md)
+
 ### Examples
 
 - [Basic Agent](docs/examples/basic-agent.md)
