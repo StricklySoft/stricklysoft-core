@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -132,7 +131,8 @@ type Agent interface {
 	// Pause temporarily suspends the agent's operation. The agent retains
 	// its resources but stops processing new work. It transitions from
 	// [StateRunning] to [StatePaused], executing any registered OnPause
-	// hook. If the hook fails, the agent transitions to [StateFailed].
+	// hook between the state validation and the final transition. If the
+	// hook fails, the agent transitions to [StateFailed].
 	//
 	// Pause may only be called from [StateRunning]. Calling Pause from
 	// any other state returns a [sserr.CodeConflict] error.
@@ -140,8 +140,8 @@ type Agent interface {
 
 	// Resume restores a paused agent to [StateRunning]. It transitions
 	// from [StatePaused] to [StateRunning], executing any registered
-	// OnResume hook. If the hook fails, the agent transitions to
-	// [StateFailed].
+	// OnResume hook between the state validation and the final transition.
+	// If the hook fails, the agent transitions to [StateFailed].
 	//
 	// Resume may only be called from [StatePaused]. Calling Resume from
 	// any other state returns a [sserr.CodeConflict] error.
@@ -171,6 +171,11 @@ type Agent interface {
 // The Uptime field is computed at the time Info() is called and reflects
 // the elapsed time since the agent entered [StateRunning]. It is zero
 // if the agent has not yet started or has been stopped.
+//
+// StartedAt is a pointer to allow nil representation for agents that
+// have not yet started. This is a deliberate deviation from the ticket
+// specification (which uses a value type) to distinguish "never started"
+// from "started at zero time."
 type AgentInfo struct {
 	// ID is the unique identifier of the agent instance.
 	ID string `json:"id"`
@@ -354,7 +359,13 @@ func (a *BaseAgent) Health(ctx context.Context) error {
 func (a *BaseAgent) SetState(new State) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.setStateLocked(new)
+}
 
+// setStateLocked transitions state while the mutex is already held. This
+// allows lifecycle methods to combine state transitions and startedAt
+// updates atomically. Callers must hold a.mu.Lock().
+func (a *BaseAgent) setStateLocked(new State) error {
 	old := a.state
 	if !ValidTransition(old, new) {
 		return sserr.Newf(sserr.CodeConflict,
@@ -385,6 +396,27 @@ func (a *BaseAgent) SetState(new State) error {
 	return nil
 }
 
+// requireState checks that the agent is currently in the expected state.
+// Returns a [*sserr.Error] with code [sserr.CodeConflict] if the current
+// state does not match. The caller must NOT hold a.mu.
+func (a *BaseAgent) requireState(expected State) error {
+	a.mu.RLock()
+	current := a.state
+	a.mu.RUnlock()
+
+	if current != expected {
+		return sserr.Newf(sserr.CodeConflict,
+			"lifecycle: expected state %q but agent is in %q", expected, current)
+	}
+	return nil
+}
+
+// failSpan records an error on the span and sets the span status to Error.
+func failSpan(span trace.Span, err error) {
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+}
+
 // Start begins the agent's operation. It transitions the agent through
 // [StateStarting] to [StateRunning], executing any registered OnStart
 // hook between the two transitions.
@@ -407,16 +439,14 @@ func (a *BaseAgent) Start(ctx context.Context) error {
 
 	// Check context before acquiring the lock.
 	if err := ctx.Err(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		failSpan(span, err)
 		return sserr.Wrap(err, sserr.CodeTimeout,
 			"lifecycle: start canceled before execution")
 	}
 
 	// Transition to Starting.
 	if err := a.SetState(StateStarting); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		failSpan(span, err)
 		return err
 	}
 
@@ -434,22 +464,22 @@ func (a *BaseAgent) Start(ctx context.Context) error {
 				"error", err,
 			)
 			_ = a.SetState(StateFailed)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			failSpan(span, err)
 			return sserr.Wrap(err, sserr.CodeInternal,
 				"lifecycle: start hook failed")
 		}
 	}
 
-	// Transition to Running and record the start timestamp.
-	if err := a.SetState(StateRunning); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+	// Transition to Running and record the start timestamp atomically
+	// under the same lock to prevent a window where Info() could see
+	// StateRunning with nil startedAt.
+	a.mu.Lock()
+	if err := a.setStateLocked(StateRunning); err != nil {
+		a.mu.Unlock()
+		failSpan(span, err)
 		return err
 	}
-
 	now := time.Now().UTC()
-	a.mu.Lock()
 	a.startedAt = &now
 	a.mu.Unlock()
 
@@ -491,16 +521,14 @@ func (a *BaseAgent) Stop(ctx context.Context) error {
 
 	// Check context before proceeding.
 	if err := ctx.Err(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		failSpan(span, err)
 		return sserr.Wrap(err, sserr.CodeTimeout,
 			"lifecycle: stop canceled before execution")
 	}
 
 	// Transition to Stopping.
 	if err := a.SetState(StateStopping); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		failSpan(span, err)
 		return err
 	}
 
@@ -517,21 +545,19 @@ func (a *BaseAgent) Stop(ctx context.Context) error {
 				"error", err,
 			)
 			_ = a.SetState(StateFailed)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			failSpan(span, err)
 			return sserr.Wrap(err, sserr.CodeInternal,
 				"lifecycle: stop hook failed")
 		}
 	}
 
-	// Transition to Stopped and clear the start timestamp.
-	if err := a.SetState(StateStopped); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+	// Transition to Stopped and clear the start timestamp atomically.
+	a.mu.Lock()
+	if err := a.setStateLocked(StateStopped); err != nil {
+		a.mu.Unlock()
+		failSpan(span, err)
 		return err
 	}
-
-	a.mu.Lock()
 	a.startedAt = nil
 	a.mu.Unlock()
 
@@ -544,8 +570,11 @@ func (a *BaseAgent) Stop(ctx context.Context) error {
 	return nil
 }
 
-// Pause temporarily suspends the agent's operation. It transitions from
-// [StateRunning] to [StatePaused], executing any registered OnPause hook.
+// Pause temporarily suspends the agent's operation. It validates that the
+// agent is in [StateRunning], executes any registered OnPause hook, and
+// then transitions to [StatePaused]. The hook runs while the agent is
+// still in [StateRunning], ensuring external observers do not see
+// [StatePaused] until the pause operation is complete.
 //
 // If the OnPause hook returns an error, the agent transitions to
 // [StateFailed] and the error is returned wrapped with
@@ -562,17 +591,16 @@ func (a *BaseAgent) Pause(ctx context.Context) error {
 
 	// Check context before proceeding.
 	if err := ctx.Err(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		failSpan(span, err)
 		return sserr.Wrap(err, sserr.CodeTimeout,
 			"lifecycle: pause canceled before execution")
 	}
 
-	// Validate that we're in a state that can be paused (Running).
-	// The state machine enforces this: only Running -> Paused is valid.
-	if err := a.SetState(StatePaused); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+	// Validate that the agent is Running before executing the hook.
+	// This is checked before the hook runs so that external observers
+	// only see StatePaused after the hook completes successfully.
+	if err := a.requireState(StateRunning); err != nil {
+		failSpan(span, err)
 		return err
 	}
 
@@ -581,7 +609,7 @@ func (a *BaseAgent) Pause(ctx context.Context) error {
 		"agent_name", a.name,
 	)
 
-	// Execute the OnPause hook outside the lock.
+	// Execute the OnPause hook while still in StateRunning.
 	if a.onPause != nil {
 		if err := a.onPause(ctx); err != nil {
 			a.logger.ErrorContext(ctx, "lifecycle: pause hook failed",
@@ -589,11 +617,16 @@ func (a *BaseAgent) Pause(ctx context.Context) error {
 				"error", err,
 			)
 			_ = a.SetState(StateFailed)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			failSpan(span, err)
 			return sserr.Wrap(err, sserr.CodeInternal,
 				"lifecycle: pause hook failed")
 		}
+	}
+
+	// Transition to Paused after the hook succeeds.
+	if err := a.SetState(StatePaused); err != nil {
+		failSpan(span, err)
+		return err
 	}
 
 	a.logger.InfoContext(ctx, "lifecycle: agent paused",
@@ -605,8 +638,11 @@ func (a *BaseAgent) Pause(ctx context.Context) error {
 	return nil
 }
 
-// Resume restores a paused agent to [StateRunning]. It transitions from
-// [StatePaused] to [StateRunning], executing any registered OnResume hook.
+// Resume restores a paused agent to [StateRunning]. It validates that the
+// agent is in [StatePaused], executes any registered OnResume hook, and
+// then transitions to [StateRunning]. The hook runs while the agent is
+// still in [StatePaused], ensuring external observers do not see
+// [StateRunning] until the resume operation is complete.
 //
 // If the OnResume hook returns an error, the agent transitions to
 // [StateFailed] and the error is returned wrapped with
@@ -623,17 +659,14 @@ func (a *BaseAgent) Resume(ctx context.Context) error {
 
 	// Check context before proceeding.
 	if err := ctx.Err(); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		failSpan(span, err)
 		return sserr.Wrap(err, sserr.CodeTimeout,
 			"lifecycle: resume canceled before execution")
 	}
 
-	// Validate that we're paused. The state machine enforces this:
-	// only Paused -> Running is valid for Resume.
-	if err := a.SetState(StateRunning); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+	// Validate that the agent is Paused before executing the hook.
+	if err := a.requireState(StatePaused); err != nil {
+		failSpan(span, err)
 		return err
 	}
 
@@ -642,7 +675,7 @@ func (a *BaseAgent) Resume(ctx context.Context) error {
 		"agent_name", a.name,
 	)
 
-	// Execute the OnResume hook outside the lock.
+	// Execute the OnResume hook while still in StatePaused.
 	if a.onResume != nil {
 		if err := a.onResume(ctx); err != nil {
 			a.logger.ErrorContext(ctx, "lifecycle: resume hook failed",
@@ -650,11 +683,16 @@ func (a *BaseAgent) Resume(ctx context.Context) error {
 				"error", err,
 			)
 			_ = a.SetState(StateFailed)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			failSpan(span, err)
 			return sserr.Wrap(err, sserr.CodeInternal,
 				"lifecycle: resume hook failed")
 		}
+	}
+
+	// Transition to Running after the hook succeeds.
+	if err := a.SetState(StateRunning); err != nil {
+		failSpan(span, err)
+		return err
 	}
 
 	a.logger.InfoContext(ctx, "lifecycle: agent resumed",
@@ -677,182 +715,4 @@ func cloneCapabilities(caps []Capability) []Capability {
 		cloned[i] = c.Clone()
 	}
 	return cloned
-}
-
-// =========================================================================
-// BaseAgentBuilder
-// =========================================================================
-
-// BaseAgentBuilder constructs a [BaseAgent] with validated configuration
-// and optional lifecycle hooks. Use [NewBaseAgentBuilder] to start building.
-//
-// The builder follows the fluent API pattern: all configuration methods
-// return the builder for chaining. Call [BaseAgentBuilder.Build] to
-// validate the configuration and produce the agent.
-//
-// Example:
-//
-//	agent, err := lifecycle.NewBaseAgentBuilder("agent-001", "research-agent", "1.0.0").
-//	    WithCapability(lifecycle.Capability{Name: "web-search", Version: "1.0.0"}).
-//	    WithOnStart(func(ctx context.Context) error {
-//	        return db.Health(ctx)
-//	    }).
-//	    WithOnStop(func(ctx context.Context) error {
-//	        db.Close()
-//	        return nil
-//	    }).
-//	    OnStateChange(func(old, new lifecycle.State) {
-//	        metrics.AgentStateTransition(old, new)
-//	    }).
-//	    Build()
-type BaseAgentBuilder struct {
-	id            string
-	name          string
-	version       string
-	capabilities  []Capability
-	logger        *slog.Logger
-	onStart       Hook
-	onStop        Hook
-	onPause       Hook
-	onResume      Hook
-	stateHandlers []StateChangeHandler
-}
-
-// NewBaseAgentBuilder creates a new builder with the required identity fields.
-// The id, name, and version are validated during [BaseAgentBuilder.Build].
-//
-// Parameters:
-//   - id: unique identifier for the agent instance (e.g., "research-agent-a1b2c3")
-//   - name: human-readable agent type name (e.g., "research-agent")
-//   - version: semantic version of the agent implementation (e.g., "1.0.0")
-func NewBaseAgentBuilder(id, name, version string) *BaseAgentBuilder {
-	return &BaseAgentBuilder{
-		id:      id,
-		name:    name,
-		version: version,
-	}
-}
-
-// WithCapability adds a single capability to the agent. The capability is
-// deep-copied during [BaseAgentBuilder.Build] to prevent external mutation.
-func (b *BaseAgentBuilder) WithCapability(cap Capability) *BaseAgentBuilder {
-	b.capabilities = append(b.capabilities, cap)
-	return b
-}
-
-// WithCapabilities adds multiple capabilities to the agent. Each capability
-// is deep-copied during [BaseAgentBuilder.Build].
-func (b *BaseAgentBuilder) WithCapabilities(caps []Capability) *BaseAgentBuilder {
-	b.capabilities = append(b.capabilities, caps...)
-	return b
-}
-
-// WithLogger sets a custom [*slog.Logger] for the agent. If not called,
-// [slog.Default] is used. The logger is used for lifecycle event logging
-// and panic recovery messages.
-func (b *BaseAgentBuilder) WithLogger(logger *slog.Logger) *BaseAgentBuilder {
-	b.logger = logger
-	return b
-}
-
-// WithOnStart sets the lifecycle hook called during [BaseAgent.Start],
-// after the agent transitions to [StateStarting] and before it transitions
-// to [StateRunning]. Use this to perform agent-specific initialization
-// (e.g., verifying database connectivity, loading models, subscribing to
-// message queues).
-func (b *BaseAgentBuilder) WithOnStart(hook Hook) *BaseAgentBuilder {
-	b.onStart = hook
-	return b
-}
-
-// WithOnStop sets the lifecycle hook called during [BaseAgent.Stop],
-// after the agent transitions to [StateStopping] and before it transitions
-// to [StateStopped]. Use this to perform agent-specific cleanup (e.g.,
-// closing database connections, flushing buffers, unsubscribing from
-// message queues).
-func (b *BaseAgentBuilder) WithOnStop(hook Hook) *BaseAgentBuilder {
-	b.onStop = hook
-	return b
-}
-
-// WithOnPause sets the lifecycle hook called during [BaseAgent.Pause],
-// after the agent transitions to [StatePaused]. Use this to suspend
-// background workers or release non-essential resources while the agent
-// is paused.
-func (b *BaseAgentBuilder) WithOnPause(hook Hook) *BaseAgentBuilder {
-	b.onPause = hook
-	return b
-}
-
-// WithOnResume sets the lifecycle hook called during [BaseAgent.Resume],
-// after the agent transitions back to [StateRunning]. Use this to restart
-// background workers or reacquire resources that were released during
-// pause.
-func (b *BaseAgentBuilder) WithOnResume(hook Hook) *BaseAgentBuilder {
-	b.onResume = hook
-	return b
-}
-
-// OnStateChange registers a [StateChangeHandler] that is called on every
-// state transition. Multiple handlers may be registered and are called in
-// registration order. Handlers execute synchronously under the state mutex
-// during [BaseAgent.SetState].
-//
-// Handlers are defensively copied during [BaseAgentBuilder.Build] to
-// prevent external modification of the handler list after construction.
-func (b *BaseAgentBuilder) OnStateChange(handler StateChangeHandler) *BaseAgentBuilder {
-	b.stateHandlers = append(b.stateHandlers, handler)
-	return b
-}
-
-// Build validates the configuration and constructs a [*BaseAgent]. Returns
-// a [*sserr.Error] with code [sserr.CodeValidation] if any required field
-// is empty.
-//
-// Build performs defensive copies of all mutable inputs (capabilities,
-// state handlers) to prevent external mutation after construction. The
-// initial state is [StateUnknown].
-func (b *BaseAgentBuilder) Build() (*BaseAgent, error) {
-	if b.id == "" {
-		return nil, sserr.New(sserr.CodeValidation,
-			"lifecycle: agent id must not be empty")
-	}
-	if b.name == "" {
-		return nil, sserr.New(sserr.CodeValidation,
-			"lifecycle: agent name must not be empty")
-	}
-	if b.version == "" {
-		return nil, sserr.New(sserr.CodeValidation,
-			"lifecycle: agent version must not be empty")
-	}
-
-	logger := b.logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	// Defensive copy of capabilities.
-	caps := make([]Capability, len(b.capabilities))
-	for i, c := range b.capabilities {
-		caps[i] = c.Clone()
-	}
-
-	// Defensive copy of state handlers.
-	handlers := make([]StateChangeHandler, len(b.stateHandlers))
-	copy(handlers, b.stateHandlers)
-
-	return &BaseAgent{
-		id:            b.id,
-		name:          b.name,
-		version:       b.version,
-		state:         StateUnknown,
-		capabilities:  caps,
-		tracer:        otel.Tracer(tracerName),
-		logger:        logger,
-		onStart:       b.onStart,
-		onStop:        b.onStop,
-		onPause:       b.onPause,
-		onResume:      b.onResume,
-		stateHandlers: handlers,
-	}, nil
 }

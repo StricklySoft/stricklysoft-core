@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -1027,5 +1028,466 @@ func TestBaseAgent_ConcurrentSetState(t *testing.T) {
 	}
 	if got := agent.State(); got != StateStarting {
 		t.Errorf("State() = %q, want %q", got, StateStarting)
+	}
+}
+
+// ===========================================================================
+// Context Cancellation Tests
+// ===========================================================================
+
+// TestBaseAgent_Stop_ContextCanceled verifies that Stop with a canceled
+// context returns immediately without modifying state.
+func TestBaseAgent_Stop_ContextCanceled(t *testing.T) {
+	agent := mustStartAgent(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+
+	err := agent.Stop(ctx)
+	if err == nil {
+		t.Fatal("Stop() with canceled context expected error, got nil")
+	}
+	if !sserr.IsTimeout(err) {
+		t.Errorf("IsTimeout() = false, want true for canceled Stop context")
+	}
+
+	// State should remain Running.
+	if got := agent.State(); got != StateRunning {
+		t.Errorf("State() = %q after canceled Stop, want %q", got, StateRunning)
+	}
+}
+
+// TestBaseAgent_Pause_ContextCanceled verifies that Pause with a canceled
+// context returns immediately without modifying state.
+func TestBaseAgent_Pause_ContextCanceled(t *testing.T) {
+	agent := mustStartAgent(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+
+	err := agent.Pause(ctx)
+	if err == nil {
+		t.Fatal("Pause() with canceled context expected error, got nil")
+	}
+	if !sserr.IsTimeout(err) {
+		t.Errorf("IsTimeout() = false, want true for canceled Pause context")
+	}
+
+	// State should remain Running.
+	if got := agent.State(); got != StateRunning {
+		t.Errorf("State() = %q after canceled Pause, want %q", got, StateRunning)
+	}
+}
+
+// TestBaseAgent_Resume_ContextCanceled verifies that Resume with a canceled
+// context returns immediately without modifying state.
+func TestBaseAgent_Resume_ContextCanceled(t *testing.T) {
+	agent := mustStartAgent(t)
+	if err := agent.Pause(context.Background()); err != nil {
+		t.Fatalf("Pause() error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+
+	err := agent.Resume(ctx)
+	if err == nil {
+		t.Fatal("Resume() with canceled context expected error, got nil")
+	}
+	if !sserr.IsTimeout(err) {
+		t.Errorf("IsTimeout() = false, want true for canceled Resume context")
+	}
+
+	// State should remain Paused.
+	if got := agent.State(); got != StatePaused {
+		t.Errorf("State() = %q after canceled Resume, want %q", got, StatePaused)
+	}
+}
+
+// ===========================================================================
+// Hook Error Wrapping Tests
+// ===========================================================================
+
+// TestBaseAgent_Stop_HookErrorWraps verifies that the stop hook error is
+// wrapped and accessible via errors.Is, and has the correct error code.
+func TestBaseAgent_Stop_HookErrorWraps(t *testing.T) {
+	hookErr := errors.New("cleanup failed")
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithOnStop(func(ctx context.Context) error {
+			return hookErr
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+	if err := agent.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+
+	stopErr := agent.Stop(context.Background())
+	if stopErr == nil {
+		t.Fatal("Stop() with failing hook expected error, got nil")
+	}
+	if !errors.Is(stopErr, hookErr) {
+		t.Error("Stop() error does not wrap the hook error")
+	}
+	if !sserr.IsInternal(stopErr) {
+		t.Errorf("IsInternal() = false, want true for stop hook failure")
+	}
+}
+
+// TestBaseAgent_Pause_HookErrorWraps verifies that the pause hook error is
+// wrapped and accessible via errors.Is, and has the correct error code.
+func TestBaseAgent_Pause_HookErrorWraps(t *testing.T) {
+	hookErr := errors.New("pause failed")
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithOnPause(func(ctx context.Context) error {
+			return hookErr
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+	if err := agent.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+
+	pauseErr := agent.Pause(context.Background())
+	if pauseErr == nil {
+		t.Fatal("Pause() with failing hook expected error, got nil")
+	}
+	if !errors.Is(pauseErr, hookErr) {
+		t.Error("Pause() error does not wrap the hook error")
+	}
+	if !sserr.IsInternal(pauseErr) {
+		t.Errorf("IsInternal() = false, want true for pause hook failure")
+	}
+}
+
+// TestBaseAgent_Resume_HookErrorWraps verifies that the resume hook error
+// is wrapped and accessible via errors.Is, and has the correct error code.
+func TestBaseAgent_Resume_HookErrorWraps(t *testing.T) {
+	hookErr := errors.New("resume failed")
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithOnResume(func(ctx context.Context) error {
+			return hookErr
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+	if err := agent.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	if err := agent.Pause(context.Background()); err != nil {
+		t.Fatalf("Pause() error: %v", err)
+	}
+
+	resumeErr := agent.Resume(context.Background())
+	if resumeErr == nil {
+		t.Fatal("Resume() with failing hook expected error, got nil")
+	}
+	if !errors.Is(resumeErr, hookErr) {
+		t.Error("Resume() error does not wrap the hook error")
+	}
+	if !sserr.IsInternal(resumeErr) {
+		t.Errorf("IsInternal() = false, want true for resume hook failure")
+	}
+}
+
+// ===========================================================================
+// Additional Lifecycle Tests
+// ===========================================================================
+
+// TestBaseAgent_Stop_FromPaused verifies that a paused agent can be stopped
+// directly without resuming first.
+func TestBaseAgent_Stop_FromPaused(t *testing.T) {
+	agent := mustStartAgent(t)
+	if err := agent.Pause(context.Background()); err != nil {
+		t.Fatalf("Pause() error: %v", err)
+	}
+
+	if err := agent.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() from Paused error: %v", err)
+	}
+	if got := agent.State(); got != StateStopped {
+		t.Errorf("State() = %q after Stop from Paused, want %q", got, StateStopped)
+	}
+}
+
+// TestBaseAgent_Info_WhilePaused verifies that Info returns correct data
+// when the agent is paused. StartedAt should be nil and Uptime should be
+// zero because the agent is not currently running.
+func TestBaseAgent_Info_WhilePaused(t *testing.T) {
+	agent := mustStartAgent(t)
+	if err := agent.Pause(context.Background()); err != nil {
+		t.Fatalf("Pause() error: %v", err)
+	}
+
+	info := agent.Info()
+	if info.State != StatePaused {
+		t.Errorf("Info().State = %q, want %q", info.State, StatePaused)
+	}
+	// When paused, StartedAt is not reported (agent is not Running).
+	if info.StartedAt != nil {
+		t.Errorf("Info().StartedAt = %v while paused, want nil", info.StartedAt)
+	}
+	if info.Uptime != 0 {
+		t.Errorf("Info().Uptime = %v while paused, want 0", info.Uptime)
+	}
+}
+
+// TestBaseAgent_MultipleStartStopCycles verifies that an agent can be
+// started and stopped multiple times. Each cycle should produce correct
+// state transitions and reset the start timestamp.
+func TestBaseAgent_MultipleStartStopCycles(t *testing.T) {
+	agent := mustBuildAgent(t)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if err := agent.Start(ctx); err != nil {
+			t.Fatalf("cycle %d: Start() error: %v", i, err)
+		}
+		if got := agent.State(); got != StateRunning {
+			t.Fatalf("cycle %d: State() = %q after Start, want %q", i, got, StateRunning)
+		}
+
+		info := agent.Info()
+		if info.StartedAt == nil {
+			t.Fatalf("cycle %d: StartedAt = nil after Start, want non-nil", i)
+		}
+
+		if err := agent.Stop(ctx); err != nil {
+			t.Fatalf("cycle %d: Stop() error: %v", i, err)
+		}
+		if got := agent.State(); got != StateStopped {
+			t.Fatalf("cycle %d: State() = %q after Stop, want %q", i, got, StateStopped)
+		}
+
+		info = agent.Info()
+		if info.StartedAt != nil {
+			t.Fatalf("cycle %d: StartedAt = %v after Stop, want nil", i, info.StartedAt)
+		}
+	}
+}
+
+// ===========================================================================
+// Hook State Visibility Tests
+// ===========================================================================
+
+// TestBaseAgent_Pause_HookSeesRunningState verifies that the OnPause hook
+// executes while the agent is still in StateRunning, ensuring external
+// observers only see StatePaused after the hook completes.
+func TestBaseAgent_Pause_HookSeesRunningState(t *testing.T) {
+	var stateInHook State
+	var agentRef *BaseAgent
+
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithOnPause(func(ctx context.Context) error {
+			stateInHook = agentRef.State()
+			return nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+	agentRef = agent
+
+	if err := agent.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	if err := agent.Pause(context.Background()); err != nil {
+		t.Fatalf("Pause() error: %v", err)
+	}
+
+	if stateInHook != StateRunning {
+		t.Errorf("state during pause hook = %q, want %q (hook should run before transition)",
+			stateInHook, StateRunning)
+	}
+}
+
+// TestBaseAgent_Resume_HookSeesPausedState verifies that the OnResume hook
+// executes while the agent is still in StatePaused, ensuring external
+// observers only see StateRunning after the hook completes.
+func TestBaseAgent_Resume_HookSeesPausedState(t *testing.T) {
+	var stateInHook State
+	var innerAgent *BaseAgent
+
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithOnResume(func(ctx context.Context) error {
+			stateInHook = innerAgent.State()
+			return nil
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+	innerAgent = agent
+
+	if err := agent.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	if err := agent.Pause(context.Background()); err != nil {
+		t.Fatalf("Pause() error: %v", err)
+	}
+	if err := agent.Resume(context.Background()); err != nil {
+		t.Fatalf("Resume() error: %v", err)
+	}
+
+	if stateInHook != StatePaused {
+		t.Errorf("state during resume hook = %q, want %q (hook should run before transition)",
+			stateInHook, StatePaused)
+	}
+}
+
+// ===========================================================================
+// Additional Health Tests
+// ===========================================================================
+
+// TestBaseAgent_Health_Stopped verifies that Health returns a CodeUnavailable
+// error when the agent is stopped.
+func TestBaseAgent_Health_Stopped(t *testing.T) {
+	agent := mustStartAgent(t)
+	if err := agent.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error: %v", err)
+	}
+
+	err := agent.Health(context.Background())
+	if err == nil {
+		t.Fatal("Health() = nil when stopped, want error")
+	}
+	if !sserr.IsUnavailable(err) {
+		t.Errorf("IsUnavailable() = false, want true for stopped agent")
+	}
+}
+
+// TestBaseAgent_Health_Failed verifies that Health returns a CodeUnavailable
+// error when the agent is in the Failed state.
+func TestBaseAgent_Health_Failed(t *testing.T) {
+	agent, err := NewBaseAgentBuilder("agent-001", "test-agent", "1.0.0").
+		WithOnStart(func(ctx context.Context) error {
+			return errors.New("startup failure")
+		}).
+		Build()
+	if err != nil {
+		t.Fatalf("Build() error: %v", err)
+	}
+
+	_ = agent.Start(context.Background()) // puts agent in Failed state
+
+	healthErr := agent.Health(context.Background())
+	if healthErr == nil {
+		t.Fatal("Health() = nil when failed, want error")
+	}
+	if !sserr.IsUnavailable(healthErr) {
+		t.Errorf("IsUnavailable() = false, want true for failed agent")
+	}
+}
+
+// TestBaseAgent_Health_Starting verifies that Health returns a CodeUnavailable
+// error when the agent is in the Starting state.
+func TestBaseAgent_Health_Starting(t *testing.T) {
+	agent := mustBuildAgent(t)
+	if err := agent.SetState(StateStarting); err != nil {
+		t.Fatalf("SetState(Starting) error: %v", err)
+	}
+
+	err := agent.Health(context.Background())
+	if err == nil {
+		t.Fatal("Health() = nil when starting, want error")
+	}
+	if !sserr.IsUnavailable(err) {
+		t.Errorf("IsUnavailable() = false, want true for starting agent")
+	}
+}
+
+// ===========================================================================
+// Additional Concurrency Tests
+// ===========================================================================
+
+// TestBaseAgent_ConcurrentPauseResume verifies that concurrent Pause and
+// Resume calls do not race or corrupt state. This test relies on the
+// -race detector.
+func TestBaseAgent_ConcurrentPauseResume(t *testing.T) {
+	agent := mustStartAgent(t)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = agent.Pause(ctx)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = agent.Resume(ctx)
+		}()
+	}
+	wg.Wait()
+
+	// The final state should be one of the valid states. We can't predict
+	// exactly which one due to the race between operations, but it must
+	// be a recognized state.
+	finalState := agent.State()
+	if !finalState.Valid() {
+		t.Errorf("final state = %q, want a valid state", finalState)
+	}
+}
+
+// ===========================================================================
+// AgentInfo JSON Tests
+// ===========================================================================
+
+// TestAgentInfo_JSONRoundTrip verifies that AgentInfo can be marshaled to
+// JSON and unmarshaled back with all fields preserved.
+func TestAgentInfo_JSONRoundTrip(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Millisecond) // truncate for JSON precision
+	info := AgentInfo{
+		ID:      "agent-001",
+		Name:    "test-agent",
+		Version: "1.0.0",
+		State:   StateRunning,
+		Capabilities: []Capability{
+			{Name: "search", Version: "1.0.0", Metadata: map[string]string{"k": "v"}},
+		},
+		StartedAt: &now,
+		Uptime:    5 * time.Second,
+	}
+
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("json.Marshal() error: %v", err)
+	}
+
+	var restored AgentInfo
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("json.Unmarshal() error: %v", err)
+	}
+
+	if restored.ID != info.ID {
+		t.Errorf("ID = %q, want %q", restored.ID, info.ID)
+	}
+	if restored.Name != info.Name {
+		t.Errorf("Name = %q, want %q", restored.Name, info.Name)
+	}
+	if restored.Version != info.Version {
+		t.Errorf("Version = %q, want %q", restored.Version, info.Version)
+	}
+	if restored.State != info.State {
+		t.Errorf("State = %q, want %q", restored.State, info.State)
+	}
+	if len(restored.Capabilities) != 1 {
+		t.Fatalf("Capabilities length = %d, want 1", len(restored.Capabilities))
+	}
+	if restored.Capabilities[0].Name != "search" {
+		t.Errorf("Capabilities[0].Name = %q, want %q",
+			restored.Capabilities[0].Name, "search")
+	}
+	if restored.StartedAt == nil {
+		t.Fatal("StartedAt = nil, want non-nil")
+	}
+	if !restored.StartedAt.Equal(now) {
+		t.Errorf("StartedAt = %v, want %v", restored.StartedAt, now)
 	}
 }

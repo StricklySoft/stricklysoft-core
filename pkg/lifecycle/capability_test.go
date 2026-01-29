@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	sserr "github.com/StricklySoft/stricklysoft-core/pkg/errors"
 )
 
 // ===========================================================================
@@ -69,6 +71,9 @@ func TestNewCapability_EmptyName(t *testing.T) {
 	if !strings.Contains(err.Error(), "name must not be empty") {
 		t.Errorf("error = %q, want message about empty name", err.Error())
 	}
+	if !sserr.IsValidation(err) {
+		t.Errorf("IsValidation() = false, want true for empty name")
+	}
 }
 
 // TestNewCapability_EmptyVersion verifies that NewCapability returns an
@@ -80,6 +85,9 @@ func TestNewCapability_EmptyVersion(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "version must not be empty") {
 		t.Errorf("error = %q, want message about empty version", err.Error())
+	}
+	if !sserr.IsValidation(err) {
+		t.Errorf("IsValidation() = false, want true for empty version")
 	}
 }
 
