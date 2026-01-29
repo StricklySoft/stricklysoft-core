@@ -10,13 +10,12 @@ Shared SDK for the StricklySoft Distributed Intelligence Platform.
 
 The StricklySoft Core SDK provides shared libraries and utilities for building AI agents on the StricklySoft platform. It includes:
 
-- **Authentication** - Identity management, JWT validation, RBAC
+- **Authentication** - Identity management, call-chain propagation, trace correlation
 - **Data Models** - Execution records, audit events, policies
-- **Database Clients** - PostgreSQL, Redis, MongoDB, Neo4j, Qdrant, MinIO
-- **Observability** - OpenTelemetry tracing, Prometheus metrics, structured logging
+- **Database Clients** - PostgreSQL (with Redis, MongoDB, Neo4j, Qdrant, MinIO planned)
+- **Observability** - OpenTelemetry tracing across lifecycle and database operations
 - **Lifecycle Management** - Agent interface, health checks, graceful shutdown
-- **Configuration** - Environment variables, config files, hot reload
-- **Nexus Client** - API Gateway client with streaming support
+- **Configuration** - Layered config loader with environment variables, config files, and struct tag defaults
 
 ## Installation
 
@@ -32,33 +31,55 @@ package main
 import (
     "context"
     "log"
+    "log/slog"
+    "os"
+    "os/signal"
 
     "github.com/StricklySoft/stricklysoft-core/pkg/lifecycle"
-    "github.com/StricklySoft/stricklysoft-core/pkg/observability"
 )
 
 func main() {
-    ctx := context.Background()
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+    defer stop()
 
-    // Initialize tracing
-    tp, err := observability.NewTracerProvider(ctx, &observability.TracerConfig{
-        ServiceName: "my-agent",
-    })
+    agent, err := lifecycle.NewBaseAgentBuilder("agent-001", "my-agent", "0.1.0").
+        WithLogger(slog.Default()).
+        WithOnStart(func(ctx context.Context) error {
+            slog.Info("agent started")
+            return nil
+        }).
+        Build()
     if err != nil {
         log.Fatal(err)
     }
-    defer tp.Shutdown(ctx)
 
-    // Create and start your agent
-    // ...
+    if err := agent.Start(ctx); err != nil {
+        log.Fatal(err)
+    }
+    defer agent.Stop(ctx)
+
+    <-ctx.Done()
 }
 ```
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Authentication Patterns](docs/authentication.md)
-- [Data Models](docs/models.md)
+### API Reference
+
+- [Configuration Loader](docs/api/config.md)
+- [Lifecycle Management](docs/api/lifecycle.md)
+- [Authentication](docs/api/auth.md)
+- [Database Clients](docs/api/clients.md)
+- [Error Handling](docs/api/errors.md)
+- [Data Models](docs/api/models.md)
+- [Observability](docs/api/observability.md)
+
+### Examples
+
+- [Basic Agent](docs/examples/basic-agent.md)
+- [Configuration](docs/examples/configuration.md)
+- [Database Client](docs/examples/database-client.md)
+- [Observability Setup](docs/examples/observability-setup.md)
 
 ## Contributing
 

@@ -16,6 +16,9 @@
 *.so
 *.dylib
 
+# Compiled example binaries
+/agent
+
 # Test binaries
 *.test
 
