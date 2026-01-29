@@ -3,95 +3,81 @@ package errors
 import (
 	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAsError_PlatformError(t *testing.T) {
+	t.Parallel()
 	platformErr := New(CodeValidation, "test")
 
 	got, ok := AsError(platformErr)
-	if !ok {
-		t.Error("AsError should return true for platform error")
-	}
-	if got != platformErr {
-		t.Error("AsError should return the same platform error")
-	}
+	require.True(t, ok, "AsError should return true for platform error")
+	assert.Equal(t, platformErr, got, "AsError should return the same platform error")
 }
 
 func TestAsError_WrappedPlatformError(t *testing.T) {
+	t.Parallel()
 	platformErr := New(CodeValidation, "test")
 	wrapped := Wrap(platformErr, CodeInternal, "wrapper")
 
 	got, ok := AsError(wrapped)
-	if !ok {
-		t.Error("AsError should return true for wrapped platform error")
-	}
-	if got.Code != CodeInternal {
-		t.Errorf("AsError should return outer error, got code %v", got.Code)
-	}
+	require.True(t, ok, "AsError should return true for wrapped platform error")
+	assert.Equal(t, CodeInternal, got.Code, "AsError should return outer error")
 }
 
 func TestAsError_StandardError(t *testing.T) {
+	t.Parallel()
 	stdErr := errors.New("standard error")
 
 	got, ok := AsError(stdErr)
-	if ok {
-		t.Error("AsError should return false for standard error")
-	}
-	if got != nil {
-		t.Error("AsError should return nil for standard error")
-	}
+	assert.False(t, ok, "AsError should return false for standard error")
+	assert.Nil(t, got, "AsError should return nil for standard error")
 }
 
 func TestAsError_Nil(t *testing.T) {
+	t.Parallel()
 	got, ok := AsError(nil)
-	if ok {
-		t.Error("AsError should return false for nil")
-	}
-	if got != nil {
-		t.Error("AsError should return nil for nil input")
-	}
+	assert.False(t, ok, "AsError should return false for nil")
+	assert.Nil(t, got, "AsError should return nil for nil input")
 }
 
 func TestAsError_DeepChain(t *testing.T) {
+	t.Parallel()
 	// Standard error wrapped in platform error wrapped in standard error wrapper
 	platformErr := New(CodeTimeout, "timeout")
 	doubleWrapped := errors.Join(errors.New("outer"), platformErr)
 
 	got, ok := AsError(doubleWrapped)
-	if !ok {
-		t.Error("AsError should find platform error in deep chain")
-	}
-	if got.Code != CodeTimeout {
-		t.Errorf("AsError found wrong error, got code %v", got.Code)
-	}
+	require.True(t, ok, "AsError should find platform error in deep chain")
+	assert.Equal(t, CodeTimeout, got.Code, "AsError found wrong error")
 }
 
 func TestGetCode_PlatformError(t *testing.T) {
+	t.Parallel()
 	err := New(CodeValidation, "test")
 
 	got := GetCode(err)
-	if got != CodeValidation {
-		t.Errorf("GetCode() = %v, want %v", got, CodeValidation)
-	}
+	assert.Equal(t, CodeValidation, got)
 }
 
 func TestGetCode_StandardError(t *testing.T) {
+	t.Parallel()
 	err := errors.New("standard error")
 
 	got := GetCode(err)
-	if got != "" {
-		t.Errorf("GetCode() = %v, want empty string", got)
-	}
+	assert.Equal(t, Code(""), got, "GetCode() should return empty string for standard error")
 }
 
 func TestGetCode_Nil(t *testing.T) {
+	t.Parallel()
 	got := GetCode(nil)
-	if got != "" {
-		t.Errorf("GetCode(nil) = %v, want empty string", got)
-	}
+	assert.Equal(t, Code(""), got, "GetCode(nil) should return empty string")
 }
 
 func TestHasCode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -126,14 +112,14 @@ func TestHasCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := HasCode(tt.err, tt.code); got != tt.want {
-				t.Errorf("HasCode() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, HasCode(tt.err, tt.code))
 		})
 	}
 }
 
 func TestIsValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -151,14 +137,14 @@ func TestIsValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsValidation(tt.err); got != tt.want {
-				t.Errorf("IsValidation() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsValidation(tt.err))
 		})
 	}
 }
 
 func TestIsAuthentication(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -175,14 +161,14 @@ func TestIsAuthentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsAuthentication(tt.err); got != tt.want {
-				t.Errorf("IsAuthentication() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsAuthentication(tt.err))
 		})
 	}
 }
 
 func TestIsAuthorization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -199,14 +185,14 @@ func TestIsAuthorization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsAuthorization(tt.err); got != tt.want {
-				t.Errorf("IsAuthorization() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsAuthorization(tt.err))
 		})
 	}
 }
 
 func TestIsNotFound(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -222,14 +208,14 @@ func TestIsNotFound(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsNotFound(tt.err); got != tt.want {
-				t.Errorf("IsNotFound() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsNotFound(tt.err))
 		})
 	}
 }
 
 func TestIsConflict(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -245,14 +231,14 @@ func TestIsConflict(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsConflict(tt.err); got != tt.want {
-				t.Errorf("IsConflict() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsConflict(tt.err))
 		})
 	}
 }
 
 func TestIsInternal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -269,14 +255,14 @@ func TestIsInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsInternal(tt.err); got != tt.want {
-				t.Errorf("IsInternal() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsInternal(tt.err))
 		})
 	}
 }
 
 func TestIsUnavailable(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -293,14 +279,14 @@ func TestIsUnavailable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsUnavailable(tt.err); got != tt.want {
-				t.Errorf("IsUnavailable() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsUnavailable(tt.err))
 		})
 	}
 }
 
 func TestIsTimeout(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -317,14 +303,14 @@ func TestIsTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsTimeout(tt.err); got != tt.want {
-				t.Errorf("IsTimeout() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsTimeout(tt.err))
 		})
 	}
 }
 
 func TestIsRetryable(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -351,14 +337,14 @@ func TestIsRetryable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsRetryable(tt.err); got != tt.want {
-				t.Errorf("IsRetryable() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsRetryable(tt.err))
 		})
 	}
 }
 
 func TestIsClientError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -386,14 +372,14 @@ func TestIsClientError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsClientError(tt.err); got != tt.want {
-				t.Errorf("IsClientError() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsClientError(tt.err))
 		})
 	}
 }
 
 func TestIsServerError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -420,28 +406,25 @@ func TestIsServerError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsServerError(tt.err); got != tt.want {
-				t.Errorf("IsServerError() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, IsServerError(tt.err))
 		})
 	}
 }
 
 func TestCheckFunctions_WithWrappedErrors(t *testing.T) {
+	t.Parallel()
 	// Ensure check functions work with wrapped platform errors
 	inner := New(CodeNotFound, "not found")
 	outer := Wrap(inner, CodeInternal, "operation failed")
 
 	// The outer error is INT, not NF
-	if IsNotFound(outer) {
-		t.Error("IsNotFound should check outer error code, not cause")
-	}
-	if !IsInternal(outer) {
-		t.Error("IsInternal should return true for outer error")
-	}
+	assert.False(t, IsNotFound(outer), "IsNotFound should check outer error code, not cause")
+	assert.True(t, IsInternal(outer), "IsInternal should return true for outer error")
 }
 
 func TestCheckFunctions_Exhaustive(t *testing.T) {
+	t.Parallel()
 	// Test that every error category is covered by exactly one category check
 	allCodes := []struct {
 		code          Code
@@ -469,41 +452,20 @@ func TestCheckFunctions_Exhaustive(t *testing.T) {
 
 	for _, tc := range allCodes {
 		t.Run(string(tc.code), func(t *testing.T) {
+			t.Parallel()
 			err := New(tc.code, "test")
 
-			if got := IsValidation(err); got != tc.isValidation {
-				t.Errorf("IsValidation() = %v, want %v", got, tc.isValidation)
-			}
-			if got := IsAuthentication(err); got != tc.isAuth {
-				t.Errorf("IsAuthentication() = %v, want %v", got, tc.isAuth)
-			}
-			if got := IsAuthorization(err); got != tc.isAuthz {
-				t.Errorf("IsAuthorization() = %v, want %v", got, tc.isAuthz)
-			}
-			if got := IsNotFound(err); got != tc.isNotFound {
-				t.Errorf("IsNotFound() = %v, want %v", got, tc.isNotFound)
-			}
-			if got := IsConflict(err); got != tc.isConflict {
-				t.Errorf("IsConflict() = %v, want %v", got, tc.isConflict)
-			}
-			if got := IsInternal(err); got != tc.isInternal {
-				t.Errorf("IsInternal() = %v, want %v", got, tc.isInternal)
-			}
-			if got := IsUnavailable(err); got != tc.isUnavailable {
-				t.Errorf("IsUnavailable() = %v, want %v", got, tc.isUnavailable)
-			}
-			if got := IsTimeout(err); got != tc.isTimeout {
-				t.Errorf("IsTimeout() = %v, want %v", got, tc.isTimeout)
-			}
-			if got := IsClientError(err); got != tc.isClientError {
-				t.Errorf("IsClientError() = %v, want %v", got, tc.isClientError)
-			}
-			if got := IsServerError(err); got != tc.isServerError {
-				t.Errorf("IsServerError() = %v, want %v", got, tc.isServerError)
-			}
-			if got := IsRetryable(err); got != tc.isRetryable {
-				t.Errorf("IsRetryable() = %v, want %v", got, tc.isRetryable)
-			}
+			assert.Equal(t, tc.isValidation, IsValidation(err), "IsValidation()")
+			assert.Equal(t, tc.isAuth, IsAuthentication(err), "IsAuthentication()")
+			assert.Equal(t, tc.isAuthz, IsAuthorization(err), "IsAuthorization()")
+			assert.Equal(t, tc.isNotFound, IsNotFound(err), "IsNotFound()")
+			assert.Equal(t, tc.isConflict, IsConflict(err), "IsConflict()")
+			assert.Equal(t, tc.isInternal, IsInternal(err), "IsInternal()")
+			assert.Equal(t, tc.isUnavailable, IsUnavailable(err), "IsUnavailable()")
+			assert.Equal(t, tc.isTimeout, IsTimeout(err), "IsTimeout()")
+			assert.Equal(t, tc.isClientError, IsClientError(err), "IsClientError()")
+			assert.Equal(t, tc.isServerError, IsServerError(err), "IsServerError()")
+			assert.Equal(t, tc.isRetryable, IsRetryable(err), "IsRetryable()")
 		})
 	}
 }

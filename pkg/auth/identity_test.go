@@ -3,6 +3,9 @@ package auth
 import (
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mustNewServiceIdentity creates a ServiceIdentity, failing the test if
@@ -11,9 +14,7 @@ import (
 func mustNewServiceIdentity(t *testing.T, id, serviceName, namespace string, claims map[string]any, permissions []Permission) *ServiceIdentity {
 	t.Helper()
 	identity, err := NewServiceIdentity(id, serviceName, namespace, claims, permissions)
-	if err != nil {
-		t.Fatalf("NewServiceIdentity(%q, %q, %q, ...) unexpected error: %v", id, serviceName, namespace, err)
-	}
+	require.NoError(t, err, "NewServiceIdentity(%q, %q, %q, ...) unexpected error", id, serviceName, namespace)
 	return identity
 }
 
@@ -23,13 +24,12 @@ func mustNewServiceIdentity(t *testing.T, id, serviceName, namespace string, cla
 func mustNewUserIdentity(t *testing.T, id, email, displayName string, claims map[string]any, permissions []Permission) *UserIdentity {
 	t.Helper()
 	identity, err := NewUserIdentity(id, email, displayName, claims, permissions)
-	if err != nil {
-		t.Fatalf("NewUserIdentity(%q, %q, %q, ...) unexpected error: %v", id, email, displayName, err)
-	}
+	require.NoError(t, err, "NewUserIdentity(%q, %q, %q, ...) unexpected error", id, email, displayName)
 	return identity
 }
 
 func TestIdentityType_String(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		idType   IdentityType
@@ -43,14 +43,14 @@ func TestIdentityType_String(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.idType.String(); got != tt.expected {
-				t.Errorf("IdentityType.String() = %q, want %q", got, tt.expected)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.expected, tt.idType.String())
 		})
 	}
 }
 
 func TestIdentityType_Valid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		idType   IdentityType
@@ -65,32 +65,25 @@ func TestIdentityType_Valid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.idType.Valid(); got != tt.expected {
-				t.Errorf("IdentityType.Valid() = %v, want %v", got, tt.expected)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.expected, tt.idType.Valid())
 		})
 	}
 }
 
 func TestNewBasicIdentity(t *testing.T) {
+	t.Parallel()
 	claims := map[string]any{"email": "user@example.com", "role": "admin"}
 	identity := NewBasicIdentity("user-123", IdentityTypeUser, claims)
 
-	if identity.ID() != "user-123" {
-		t.Errorf("ID() = %q, want %q", identity.ID(), "user-123")
-	}
-	if identity.Type() != IdentityTypeUser {
-		t.Errorf("Type() = %q, want %q", identity.Type(), IdentityTypeUser)
-	}
-	if len(identity.Claims()) != 2 {
-		t.Errorf("Claims() has %d entries, want 2", len(identity.Claims()))
-	}
-	if identity.Claims()["email"] != "user@example.com" {
-		t.Errorf("Claims()[email] = %q, want %q", identity.Claims()["email"], "user@example.com")
-	}
+	assert.Equal(t, "user-123", identity.ID())
+	assert.Equal(t, IdentityTypeUser, identity.Type())
+	assert.Len(t, identity.Claims(), 2)
+	assert.Equal(t, "user@example.com", identity.Claims()["email"])
 }
 
 func TestNewBasicIdentity_ClaimsAreCopied(t *testing.T) {
+	t.Parallel()
 	claims := map[string]any{"key": "original"}
 	identity := NewBasicIdentity("id", IdentityTypeUser, claims)
 
@@ -98,23 +91,17 @@ func TestNewBasicIdentity_ClaimsAreCopied(t *testing.T) {
 	claims["key"] = "mutated"
 	claims["new_key"] = "new_value"
 
-	if identity.Claims()["key"] != "original" {
-		t.Error("claims mutation leaked into identity; expected defensive copy")
-	}
-	if _, exists := identity.Claims()["new_key"]; exists {
-		t.Error("new claim key leaked into identity; expected defensive copy")
-	}
+	assert.Equal(t, "original", identity.Claims()["key"], "claims mutation leaked into identity; expected defensive copy")
+	_, exists := identity.Claims()["new_key"]
+	assert.False(t, exists, "new claim key leaked into identity; expected defensive copy")
 }
 
 func TestNewBasicIdentity_NilClaims(t *testing.T) {
+	t.Parallel()
 	identity := NewBasicIdentity("id", IdentityTypeService, nil)
 
-	if identity.Claims() == nil {
-		t.Error("Claims() returned nil, expected empty map")
-	}
-	if len(identity.Claims()) != 0 {
-		t.Errorf("Claims() has %d entries, want 0", len(identity.Claims()))
-	}
+	assert.NotNil(t, identity.Claims(), "Claims() returned nil, expected empty map")
+	assert.Len(t, identity.Claims(), 0)
 }
 
 // Verify concrete types implement the Identity interface at compile time.
@@ -123,6 +110,7 @@ var _ Identity = (*ServiceIdentity)(nil)
 var _ Identity = (*UserIdentity)(nil)
 
 func TestBasicIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
+	t.Parallel()
 	identity := NewBasicIdentity("user-1", IdentityTypeUser, map[string]any{"key": "original"})
 
 	// Mutating the returned map should not affect subsequent calls.
@@ -131,35 +119,28 @@ func TestBasicIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
 	first["injected"] = "attack"
 
 	second := identity.Claims()
-	if second["key"] != "original" {
-		t.Errorf("Claims() mutation leaked: key = %q, want %q", second["key"], "original")
-	}
-	if _, exists := second["injected"]; exists {
-		t.Error("Claims() mutation leaked: injected key should not exist")
-	}
+	assert.Equal(t, "original", second["key"], "Claims() mutation leaked")
+	_, exists := second["injected"]
+	assert.False(t, exists, "Claims() mutation leaked: injected key should not exist")
 }
 
 func TestCallChain_Depth(t *testing.T) {
+	t.Parallel()
 	chain := &CallChain{
 		OriginalID:   "user-1",
 		OriginalType: IdentityTypeUser,
 	}
-	if chain.Depth() != 0 {
-		t.Errorf("Depth() = %d, want 0 for empty callers", chain.Depth())
-	}
+	assert.Equal(t, 0, chain.Depth(), "Depth() should be 0 for empty callers")
 
 	chain = chain.AppendCaller(CallerInfo{ServiceName: "svc-a"})
-	if chain.Depth() != 1 {
-		t.Errorf("Depth() = %d, want 1", chain.Depth())
-	}
+	assert.Equal(t, 1, chain.Depth())
 
 	chain = chain.AppendCaller(CallerInfo{ServiceName: "svc-b"})
-	if chain.Depth() != 2 {
-		t.Errorf("Depth() = %d, want 2", chain.Depth())
-	}
+	assert.Equal(t, 2, chain.Depth())
 }
 
 func TestCallChain_AppendCaller_TruncatesAtMaxDepth(t *testing.T) {
+	t.Parallel()
 	chain := &CallChain{
 		OriginalID:   "user-1",
 		OriginalType: IdentityTypeUser,
@@ -169,44 +150,32 @@ func TestCallChain_AppendCaller_TruncatesAtMaxDepth(t *testing.T) {
 	for i := 0; i < MaxCallChainDepth; i++ {
 		chain = chain.AppendCaller(CallerInfo{ServiceName: fmt.Sprintf("svc-%d", i)})
 	}
-	if chain.Depth() != MaxCallChainDepth {
-		t.Fatalf("Depth() = %d, want %d", chain.Depth(), MaxCallChainDepth)
-	}
+	require.Equal(t, MaxCallChainDepth, chain.Depth())
 
 	// Adding one more should still result in MaxCallChainDepth entries.
 	chain = chain.AppendCaller(CallerInfo{ServiceName: "svc-overflow"})
-	if chain.Depth() != MaxCallChainDepth {
-		t.Fatalf("Depth() = %d after overflow, want %d", chain.Depth(), MaxCallChainDepth)
-	}
+	require.Equal(t, MaxCallChainDepth, chain.Depth(), "Depth() after overflow")
 
 	// The newest caller should be the last entry.
 	last := chain.Callers[MaxCallChainDepth-1]
-	if last.ServiceName != "svc-overflow" {
-		t.Errorf("last caller = %q, want %q", last.ServiceName, "svc-overflow")
-	}
+	assert.Equal(t, "svc-overflow", last.ServiceName)
 
 	// The oldest caller (svc-0) should have been dropped.
 	first := chain.Callers[0]
-	if first.ServiceName == "svc-0" {
-		t.Error("oldest caller svc-0 should have been truncated")
-	}
+	assert.NotEqual(t, "svc-0", first.ServiceName, "oldest caller svc-0 should have been truncated")
 	// The first entry should now be svc-1 (second-oldest from previous chain).
-	if first.ServiceName != "svc-1" {
-		t.Errorf("first caller = %q, want %q", first.ServiceName, "svc-1")
-	}
+	assert.Equal(t, "svc-1", first.ServiceName)
 }
 
 func TestCallChain_MaxCallChainDepth_IsReasonable(t *testing.T) {
+	t.Parallel()
 	// Verify the constant is a sane value.
-	if MaxCallChainDepth < 8 {
-		t.Errorf("MaxCallChainDepth = %d, too small for realistic service meshes", MaxCallChainDepth)
-	}
-	if MaxCallChainDepth > 128 {
-		t.Errorf("MaxCallChainDepth = %d, too large — risks header overflow", MaxCallChainDepth)
-	}
+	assert.GreaterOrEqual(t, MaxCallChainDepth, 8, "MaxCallChainDepth too small for realistic service meshes")
+	assert.LessOrEqual(t, MaxCallChainDepth, 128, "MaxCallChainDepth too large — risks header overflow")
 }
 
 func TestCallChain_AppendCaller_Immutable(t *testing.T) {
+	t.Parallel()
 	original := &CallChain{
 		OriginalID:   "user-1",
 		OriginalType: IdentityTypeUser,
@@ -218,28 +187,16 @@ func TestCallChain_AppendCaller_Immutable(t *testing.T) {
 	extended := original.AppendCaller(CallerInfo{ServiceName: "svc-b"})
 
 	// Original should not be modified.
-	if len(original.Callers) != 1 {
-		t.Errorf("original.Callers has %d entries, want 1 (immutability violated)", len(original.Callers))
-	}
+	assert.Len(t, original.Callers, 1, "immutability violated")
 
 	// Extended should have both callers.
-	if len(extended.Callers) != 2 {
-		t.Errorf("extended.Callers has %d entries, want 2", len(extended.Callers))
-	}
-	if extended.Callers[0].ServiceName != "svc-a" {
-		t.Errorf("extended.Callers[0].ServiceName = %q, want %q", extended.Callers[0].ServiceName, "svc-a")
-	}
-	if extended.Callers[1].ServiceName != "svc-b" {
-		t.Errorf("extended.Callers[1].ServiceName = %q, want %q", extended.Callers[1].ServiceName, "svc-b")
-	}
+	require.Len(t, extended.Callers, 2)
+	assert.Equal(t, "svc-a", extended.Callers[0].ServiceName)
+	assert.Equal(t, "svc-b", extended.Callers[1].ServiceName)
 
 	// Original identity info should be preserved.
-	if extended.OriginalID != "user-1" {
-		t.Errorf("extended.OriginalID = %q, want %q", extended.OriginalID, "user-1")
-	}
-	if extended.OriginalType != IdentityTypeUser {
-		t.Errorf("extended.OriginalType = %q, want %q", extended.OriginalType, IdentityTypeUser)
-	}
+	assert.Equal(t, "user-1", extended.OriginalID)
+	assert.Equal(t, IdentityTypeUser, extended.OriginalType)
 }
 
 // ---------------------------------------------------------------------------
@@ -247,18 +204,13 @@ func TestCallChain_AppendCaller_Immutable(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBasicIdentity_HasPermission_AlwaysFalse(t *testing.T) {
+	t.Parallel()
 	identity := NewBasicIdentity("user-1", IdentityTypeUser, map[string]any{"role": "admin"})
 
 	// BasicIdentity is a transport-level type and should never grant permissions.
-	if identity.HasPermission("documents", "read") {
-		t.Error("BasicIdentity.HasPermission() should always return false")
-	}
-	if identity.HasPermission("*", "*") {
-		t.Error("BasicIdentity.HasPermission() should return false even for wildcards")
-	}
-	if identity.HasPermission("", "") {
-		t.Error("BasicIdentity.HasPermission() should return false for empty strings")
-	}
+	assert.False(t, identity.HasPermission("documents", "read"), "BasicIdentity.HasPermission() should always return false")
+	assert.False(t, identity.HasPermission("*", "*"), "BasicIdentity.HasPermission() should return false even for wildcards")
+	assert.False(t, identity.HasPermission("", ""), "BasicIdentity.HasPermission() should return false for empty strings")
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +218,7 @@ func TestBasicIdentity_HasPermission_AlwaysFalse(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewServiceIdentity(t *testing.T) {
+	t.Parallel()
 	claims := map[string]any{"env": "production", "cluster": "us-east-1"}
 	perms := []Permission{
 		{Resource: "documents", Action: "read"},
@@ -273,49 +226,35 @@ func TestNewServiceIdentity(t *testing.T) {
 	}
 	identity := mustNewServiceIdentity(t, "svc-123", "nexus-gateway", "platform", claims, perms)
 
-	if identity.ID() != "svc-123" {
-		t.Errorf("ID() = %q, want %q", identity.ID(), "svc-123")
-	}
-	if identity.Type() != IdentityTypeService {
-		t.Errorf("Type() = %q, want %q", identity.Type(), IdentityTypeService)
-	}
-	if identity.ServiceName() != "nexus-gateway" {
-		t.Errorf("ServiceName() = %q, want %q", identity.ServiceName(), "nexus-gateway")
-	}
-	if identity.Namespace() != "platform" {
-		t.Errorf("Namespace() = %q, want %q", identity.Namespace(), "platform")
-	}
-	if len(identity.Claims()) != 2 {
-		t.Errorf("Claims() has %d entries, want 2", len(identity.Claims()))
-	}
-	if identity.Claims()["env"] != "production" {
-		t.Errorf("Claims()[env] = %v, want %q", identity.Claims()["env"], "production")
-	}
+	assert.Equal(t, "svc-123", identity.ID())
+	assert.Equal(t, IdentityTypeService, identity.Type())
+	assert.Equal(t, "nexus-gateway", identity.ServiceName())
+	assert.Equal(t, "platform", identity.Namespace())
+	assert.Len(t, identity.Claims(), 2)
+	assert.Equal(t, "production", identity.Claims()["env"])
 }
 
 func TestNewServiceIdentity_EmptyID(t *testing.T) {
+	t.Parallel()
 	_, err := NewServiceIdentity("", "svc", "ns", nil, nil)
-	if err == nil {
-		t.Fatal("NewServiceIdentity with empty ID should return an error")
-	}
+	require.Error(t, err, "NewServiceIdentity with empty ID should return an error")
 }
 
 func TestNewServiceIdentity_EmptyServiceName(t *testing.T) {
+	t.Parallel()
 	_, err := NewServiceIdentity("svc-1", "", "ns", nil, nil)
-	if err == nil {
-		t.Fatal("NewServiceIdentity with empty serviceName should return an error")
-	}
+	require.Error(t, err, "NewServiceIdentity with empty serviceName should return an error")
 }
 
 func TestNewServiceIdentity_EmptyNamespaceIsAllowed(t *testing.T) {
+	t.Parallel()
 	// Namespace can be empty (e.g., non-Kubernetes deployments).
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "", nil, nil)
-	if identity.Namespace() != "" {
-		t.Errorf("Namespace() = %q, want empty string", identity.Namespace())
-	}
+	assert.Equal(t, "", identity.Namespace())
 }
 
 func TestNewServiceIdentity_ClaimsDefensivelyCopied(t *testing.T) {
+	t.Parallel()
 	claims := map[string]any{"key": "original"}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", claims, nil)
 
@@ -323,15 +262,13 @@ func TestNewServiceIdentity_ClaimsDefensivelyCopied(t *testing.T) {
 	claims["key"] = "mutated"
 	claims["injected"] = "value"
 
-	if identity.Claims()["key"] != "original" {
-		t.Error("input claims mutation leaked into ServiceIdentity")
-	}
-	if _, exists := identity.Claims()["injected"]; exists {
-		t.Error("injected claim key leaked into ServiceIdentity")
-	}
+	assert.Equal(t, "original", identity.Claims()["key"], "input claims mutation leaked into ServiceIdentity")
+	_, exists := identity.Claims()["injected"]
+	assert.False(t, exists, "injected claim key leaked into ServiceIdentity")
 }
 
 func TestServiceIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
+	t.Parallel()
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", map[string]any{"key": "original"}, nil)
 
 	first := identity.Claims()
@@ -339,125 +276,88 @@ func TestServiceIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
 	first["injected"] = "attack"
 
 	second := identity.Claims()
-	if second["key"] != "original" {
-		t.Errorf("Claims() mutation leaked: key = %q, want %q", second["key"], "original")
-	}
-	if _, exists := second["injected"]; exists {
-		t.Error("Claims() mutation leaked: injected key should not exist")
-	}
+	assert.Equal(t, "original", second["key"], "Claims() mutation leaked")
+	_, exists := second["injected"]
+	assert.False(t, exists, "Claims() mutation leaked: injected key should not exist")
 }
 
 func TestNewServiceIdentity_PermissionsDefensivelyCopied(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "docs", Action: "read"}}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
 	// Mutating the input slice should not affect the identity.
 	perms[0] = Permission{Resource: "HACKED", Action: "HACKED"}
 
-	if identity.HasPermission("HACKED", "HACKED") {
-		t.Error("input permissions mutation leaked into ServiceIdentity")
-	}
-	if !identity.HasPermission("docs", "read") {
-		t.Error("original permission should still be present")
-	}
+	assert.False(t, identity.HasPermission("HACKED", "HACKED"), "input permissions mutation leaked into ServiceIdentity")
+	assert.True(t, identity.HasPermission("docs", "read"), "original permission should still be present")
 }
 
 func TestNewServiceIdentity_NilClaimsAndPermissions(t *testing.T) {
+	t.Parallel()
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, nil)
 
-	if identity.Claims() == nil {
-		t.Error("Claims() returned nil, expected empty map")
-	}
-	if len(identity.Claims()) != 0 {
-		t.Errorf("Claims() has %d entries, want 0", len(identity.Claims()))
-	}
-	if identity.HasPermission("anything", "anything") {
-		t.Error("HasPermission should return false with no permissions")
-	}
+	assert.NotNil(t, identity.Claims(), "Claims() returned nil, expected empty map")
+	assert.Len(t, identity.Claims(), 0)
+	assert.False(t, identity.HasPermission("anything", "anything"), "HasPermission should return false with no permissions")
 }
 
 func TestServiceIdentity_HasPermission_ExactMatch(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{
 		{Resource: "documents", Action: "read"},
 		{Resource: "users", Action: "delete"},
 	}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
-	if !identity.HasPermission("documents", "read") {
-		t.Error("expected permission for documents:read")
-	}
-	if !identity.HasPermission("users", "delete") {
-		t.Error("expected permission for users:delete")
-	}
-	if identity.HasPermission("documents", "delete") {
-		t.Error("should not have permission for documents:delete")
-	}
-	if identity.HasPermission("users", "read") {
-		t.Error("should not have permission for users:read")
-	}
+	assert.True(t, identity.HasPermission("documents", "read"), "expected permission for documents:read")
+	assert.True(t, identity.HasPermission("users", "delete"), "expected permission for users:delete")
+	assert.False(t, identity.HasPermission("documents", "delete"), "should not have permission for documents:delete")
+	assert.False(t, identity.HasPermission("users", "read"), "should not have permission for users:read")
 }
 
 func TestServiceIdentity_HasPermission_WildcardResource(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "*", Action: "read"}}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
-	if !identity.HasPermission("documents", "read") {
-		t.Error("wildcard resource should match documents:read")
-	}
-	if !identity.HasPermission("users", "read") {
-		t.Error("wildcard resource should match users:read")
-	}
-	if identity.HasPermission("documents", "write") {
-		t.Error("wildcard resource should not match documents:write")
-	}
+	assert.True(t, identity.HasPermission("documents", "read"), "wildcard resource should match documents:read")
+	assert.True(t, identity.HasPermission("users", "read"), "wildcard resource should match users:read")
+	assert.False(t, identity.HasPermission("documents", "write"), "wildcard resource should not match documents:write")
 }
 
 func TestServiceIdentity_HasPermission_WildcardAction(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "documents", Action: "*"}}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
-	if !identity.HasPermission("documents", "read") {
-		t.Error("wildcard action should match documents:read")
-	}
-	if !identity.HasPermission("documents", "write") {
-		t.Error("wildcard action should match documents:write")
-	}
-	if !identity.HasPermission("documents", "delete") {
-		t.Error("wildcard action should match documents:delete")
-	}
-	if identity.HasPermission("users", "read") {
-		t.Error("wildcard action should not match users:read")
-	}
+	assert.True(t, identity.HasPermission("documents", "read"), "wildcard action should match documents:read")
+	assert.True(t, identity.HasPermission("documents", "write"), "wildcard action should match documents:write")
+	assert.True(t, identity.HasPermission("documents", "delete"), "wildcard action should match documents:delete")
+	assert.False(t, identity.HasPermission("users", "read"), "wildcard action should not match users:read")
 }
 
 func TestServiceIdentity_HasPermission_FullWildcard(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "*", Action: "*"}}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
-	if !identity.HasPermission("documents", "read") {
-		t.Error("full wildcard should match documents:read")
-	}
-	if !identity.HasPermission("users", "delete") {
-		t.Error("full wildcard should match users:delete")
-	}
-	if !identity.HasPermission("anything", "anything") {
-		t.Error("full wildcard should match anything:anything")
-	}
+	assert.True(t, identity.HasPermission("documents", "read"), "full wildcard should match documents:read")
+	assert.True(t, identity.HasPermission("users", "delete"), "full wildcard should match users:delete")
+	assert.True(t, identity.HasPermission("anything", "anything"), "full wildcard should match anything:anything")
 }
 
 func TestServiceIdentity_HasPermission_NoMatch(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "documents", Action: "read"}}
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
-	if identity.HasPermission("secrets", "read") {
-		t.Error("should not have permission for secrets:read")
-	}
-	if identity.HasPermission("documents", "execute") {
-		t.Error("should not have permission for documents:execute")
-	}
+	assert.False(t, identity.HasPermission("secrets", "read"), "should not have permission for secrets:read")
+	assert.False(t, identity.HasPermission("documents", "execute"), "should not have permission for documents:execute")
 }
 
 func TestServiceIdentity_Permissions_ReturnsDefensiveCopy(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{
 		{Resource: "documents", Action: "read"},
 		{Resource: "users", Action: "write"},
@@ -465,34 +365,25 @@ func TestServiceIdentity_Permissions_ReturnsDefensiveCopy(t *testing.T) {
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
 
 	got := identity.Permissions()
-	if len(got) != 2 {
-		t.Fatalf("Permissions() returned %d entries, want 2", len(got))
-	}
-	if got[0].Resource != "documents" || got[0].Action != "read" {
-		t.Errorf("Permissions()[0] = %+v, want {documents read}", got[0])
-	}
-	if got[1].Resource != "users" || got[1].Action != "write" {
-		t.Errorf("Permissions()[1] = %+v, want {users write}", got[1])
-	}
+	require.Len(t, got, 2)
+	assert.Equal(t, "documents", got[0].Resource)
+	assert.Equal(t, "read", got[0].Action)
+	assert.Equal(t, "users", got[1].Resource)
+	assert.Equal(t, "write", got[1].Action)
 
 	// Mutating the returned slice should not affect the identity.
 	got[0] = Permission{Resource: "HACKED", Action: "HACKED"}
 	second := identity.Permissions()
-	if second[0].Resource != "documents" {
-		t.Error("Permissions() mutation leaked into ServiceIdentity")
-	}
+	assert.Equal(t, "documents", second[0].Resource, "Permissions() mutation leaked into ServiceIdentity")
 }
 
 func TestServiceIdentity_Permissions_NilPermissions(t *testing.T) {
+	t.Parallel()
 	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, nil)
 
 	got := identity.Permissions()
-	if got == nil {
-		t.Error("Permissions() returned nil, expected empty slice")
-	}
-	if len(got) != 0 {
-		t.Errorf("Permissions() returned %d entries, want 0", len(got))
-	}
+	assert.NotNil(t, got, "Permissions() returned nil, expected empty slice")
+	assert.Len(t, got, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +391,7 @@ func TestServiceIdentity_Permissions_NilPermissions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewUserIdentity(t *testing.T) {
+	t.Parallel()
 	claims := map[string]any{"org": "stricklysoft", "tier": "enterprise"}
 	perms := []Permission{
 		{Resource: "projects", Action: "read"},
@@ -507,64 +399,48 @@ func TestNewUserIdentity(t *testing.T) {
 	}
 	identity := mustNewUserIdentity(t, "usr-456", "admin@stricklysoft.io", "Admin User", claims, perms)
 
-	if identity.ID() != "usr-456" {
-		t.Errorf("ID() = %q, want %q", identity.ID(), "usr-456")
-	}
-	if identity.Type() != IdentityTypeUser {
-		t.Errorf("Type() = %q, want %q", identity.Type(), IdentityTypeUser)
-	}
-	if identity.Email() != "admin@stricklysoft.io" {
-		t.Errorf("Email() = %q, want %q", identity.Email(), "admin@stricklysoft.io")
-	}
-	if identity.DisplayName() != "Admin User" {
-		t.Errorf("DisplayName() = %q, want %q", identity.DisplayName(), "Admin User")
-	}
-	if len(identity.Claims()) != 2 {
-		t.Errorf("Claims() has %d entries, want 2", len(identity.Claims()))
-	}
-	if identity.Claims()["org"] != "stricklysoft" {
-		t.Errorf("Claims()[org] = %v, want %q", identity.Claims()["org"], "stricklysoft")
-	}
+	assert.Equal(t, "usr-456", identity.ID())
+	assert.Equal(t, IdentityTypeUser, identity.Type())
+	assert.Equal(t, "admin@stricklysoft.io", identity.Email())
+	assert.Equal(t, "Admin User", identity.DisplayName())
+	assert.Len(t, identity.Claims(), 2)
+	assert.Equal(t, "stricklysoft", identity.Claims()["org"])
 }
 
 func TestNewUserIdentity_EmptyID(t *testing.T) {
+	t.Parallel()
 	_, err := NewUserIdentity("", "a@b.com", "A", nil, nil)
-	if err == nil {
-		t.Fatal("NewUserIdentity with empty ID should return an error")
-	}
+	require.Error(t, err, "NewUserIdentity with empty ID should return an error")
 }
 
 func TestNewUserIdentity_EmptyEmail(t *testing.T) {
+	t.Parallel()
 	_, err := NewUserIdentity("usr-1", "", "A", nil, nil)
-	if err == nil {
-		t.Fatal("NewUserIdentity with empty email should return an error")
-	}
+	require.Error(t, err, "NewUserIdentity with empty email should return an error")
 }
 
 func TestNewUserIdentity_EmptyDisplayNameIsAllowed(t *testing.T) {
+	t.Parallel()
 	// Display name can be empty (not all identity providers supply one).
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "", nil, nil)
-	if identity.DisplayName() != "" {
-		t.Errorf("DisplayName() = %q, want empty string", identity.DisplayName())
-	}
+	assert.Equal(t, "", identity.DisplayName())
 }
 
 func TestNewUserIdentity_ClaimsDefensivelyCopied(t *testing.T) {
+	t.Parallel()
 	claims := map[string]any{"key": "original"}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", claims, nil)
 
 	claims["key"] = "mutated"
 	claims["injected"] = "value"
 
-	if identity.Claims()["key"] != "original" {
-		t.Error("input claims mutation leaked into UserIdentity")
-	}
-	if _, exists := identity.Claims()["injected"]; exists {
-		t.Error("injected claim key leaked into UserIdentity")
-	}
+	assert.Equal(t, "original", identity.Claims()["key"], "input claims mutation leaked into UserIdentity")
+	_, exists := identity.Claims()["injected"]
+	assert.False(t, exists, "injected claim key leaked into UserIdentity")
 }
 
 func TestUserIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
+	t.Parallel()
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", map[string]any{"key": "original"}, nil)
 
 	first := identity.Claims()
@@ -572,109 +448,82 @@ func TestUserIdentity_ClaimsReturnsDefensiveCopy(t *testing.T) {
 	first["injected"] = "attack"
 
 	second := identity.Claims()
-	if second["key"] != "original" {
-		t.Errorf("Claims() mutation leaked: key = %q, want %q", second["key"], "original")
-	}
-	if _, exists := second["injected"]; exists {
-		t.Error("Claims() mutation leaked: injected key should not exist")
-	}
+	assert.Equal(t, "original", second["key"], "Claims() mutation leaked")
+	_, exists := second["injected"]
+	assert.False(t, exists, "Claims() mutation leaked: injected key should not exist")
 }
 
 func TestNewUserIdentity_PermissionsDefensivelyCopied(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "projects", Action: "read"}}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
 	perms[0] = Permission{Resource: "HACKED", Action: "HACKED"}
 
-	if identity.HasPermission("HACKED", "HACKED") {
-		t.Error("input permissions mutation leaked into UserIdentity")
-	}
-	if !identity.HasPermission("projects", "read") {
-		t.Error("original permission should still be present")
-	}
+	assert.False(t, identity.HasPermission("HACKED", "HACKED"), "input permissions mutation leaked into UserIdentity")
+	assert.True(t, identity.HasPermission("projects", "read"), "original permission should still be present")
 }
 
 func TestNewUserIdentity_NilClaimsAndPermissions(t *testing.T) {
+	t.Parallel()
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, nil)
 
-	if identity.Claims() == nil {
-		t.Error("Claims() returned nil, expected empty map")
-	}
-	if len(identity.Claims()) != 0 {
-		t.Errorf("Claims() has %d entries, want 0", len(identity.Claims()))
-	}
-	if identity.HasPermission("anything", "anything") {
-		t.Error("HasPermission should return false with no permissions")
-	}
+	assert.NotNil(t, identity.Claims(), "Claims() returned nil, expected empty map")
+	assert.Len(t, identity.Claims(), 0)
+	assert.False(t, identity.HasPermission("anything", "anything"), "HasPermission should return false with no permissions")
 }
 
 func TestUserIdentity_HasPermission_ExactMatch(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{
 		{Resource: "projects", Action: "read"},
 		{Resource: "reports", Action: "generate"},
 	}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
-	if !identity.HasPermission("projects", "read") {
-		t.Error("expected permission for projects:read")
-	}
-	if !identity.HasPermission("reports", "generate") {
-		t.Error("expected permission for reports:generate")
-	}
-	if identity.HasPermission("projects", "delete") {
-		t.Error("should not have permission for projects:delete")
-	}
+	assert.True(t, identity.HasPermission("projects", "read"), "expected permission for projects:read")
+	assert.True(t, identity.HasPermission("reports", "generate"), "expected permission for reports:generate")
+	assert.False(t, identity.HasPermission("projects", "delete"), "should not have permission for projects:delete")
 }
 
 func TestUserIdentity_HasPermission_WildcardResource(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "*", Action: "read"}}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
-	if !identity.HasPermission("projects", "read") {
-		t.Error("wildcard resource should match projects:read")
-	}
-	if !identity.HasPermission("users", "read") {
-		t.Error("wildcard resource should match users:read")
-	}
-	if identity.HasPermission("projects", "write") {
-		t.Error("wildcard resource should not match projects:write")
-	}
+	assert.True(t, identity.HasPermission("projects", "read"), "wildcard resource should match projects:read")
+	assert.True(t, identity.HasPermission("users", "read"), "wildcard resource should match users:read")
+	assert.False(t, identity.HasPermission("projects", "write"), "wildcard resource should not match projects:write")
 }
 
 func TestUserIdentity_HasPermission_WildcardAction(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "projects", Action: "*"}}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
-	if !identity.HasPermission("projects", "read") {
-		t.Error("wildcard action should match projects:read")
-	}
-	if !identity.HasPermission("projects", "delete") {
-		t.Error("wildcard action should match projects:delete")
-	}
-	if identity.HasPermission("users", "read") {
-		t.Error("wildcard action should not match users:read")
-	}
+	assert.True(t, identity.HasPermission("projects", "read"), "wildcard action should match projects:read")
+	assert.True(t, identity.HasPermission("projects", "delete"), "wildcard action should match projects:delete")
+	assert.False(t, identity.HasPermission("users", "read"), "wildcard action should not match users:read")
 }
 
 func TestUserIdentity_HasPermission_FullWildcard(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "*", Action: "*"}}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
-	if !identity.HasPermission("anything", "anything") {
-		t.Error("full wildcard should match anything:anything")
-	}
+	assert.True(t, identity.HasPermission("anything", "anything"), "full wildcard should match anything:anything")
 }
 
 func TestUserIdentity_HasPermission_NoMatch(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{{Resource: "projects", Action: "read"}}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
-	if identity.HasPermission("secrets", "read") {
-		t.Error("should not have permission for secrets:read")
-	}
+	assert.False(t, identity.HasPermission("secrets", "read"), "should not have permission for secrets:read")
 }
 
 func TestUserIdentity_HasPermission_MultiplePermissions(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{
 		{Resource: "projects", Action: "read"},
 		{Resource: "projects", Action: "write"},
@@ -683,27 +532,16 @@ func TestUserIdentity_HasPermission_MultiplePermissions(t *testing.T) {
 	}
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
-	if !identity.HasPermission("projects", "read") {
-		t.Error("expected projects:read")
-	}
-	if !identity.HasPermission("projects", "write") {
-		t.Error("expected projects:write")
-	}
-	if !identity.HasPermission("users", "read") {
-		t.Error("expected users:read")
-	}
-	if !identity.HasPermission("agents", "execute") {
-		t.Error("expected agents:execute via wildcard action")
-	}
-	if identity.HasPermission("users", "delete") {
-		t.Error("should not have users:delete")
-	}
-	if identity.HasPermission("secrets", "read") {
-		t.Error("should not have secrets:read")
-	}
+	assert.True(t, identity.HasPermission("projects", "read"), "expected projects:read")
+	assert.True(t, identity.HasPermission("projects", "write"), "expected projects:write")
+	assert.True(t, identity.HasPermission("users", "read"), "expected users:read")
+	assert.True(t, identity.HasPermission("agents", "execute"), "expected agents:execute via wildcard action")
+	assert.False(t, identity.HasPermission("users", "delete"), "should not have users:delete")
+	assert.False(t, identity.HasPermission("secrets", "read"), "should not have secrets:read")
 }
 
 func TestUserIdentity_Permissions_ReturnsDefensiveCopy(t *testing.T) {
+	t.Parallel()
 	perms := []Permission{
 		{Resource: "projects", Action: "read"},
 		{Resource: "reports", Action: "generate"},
@@ -711,32 +549,23 @@ func TestUserIdentity_Permissions_ReturnsDefensiveCopy(t *testing.T) {
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
 
 	got := identity.Permissions()
-	if len(got) != 2 {
-		t.Fatalf("Permissions() returned %d entries, want 2", len(got))
-	}
-	if got[0].Resource != "projects" || got[0].Action != "read" {
-		t.Errorf("Permissions()[0] = %+v, want {projects read}", got[0])
-	}
-	if got[1].Resource != "reports" || got[1].Action != "generate" {
-		t.Errorf("Permissions()[1] = %+v, want {reports generate}", got[1])
-	}
+	require.Len(t, got, 2)
+	assert.Equal(t, "projects", got[0].Resource)
+	assert.Equal(t, "read", got[0].Action)
+	assert.Equal(t, "reports", got[1].Resource)
+	assert.Equal(t, "generate", got[1].Action)
 
 	// Mutating the returned slice should not affect the identity.
 	got[0] = Permission{Resource: "HACKED", Action: "HACKED"}
 	second := identity.Permissions()
-	if second[0].Resource != "projects" {
-		t.Error("Permissions() mutation leaked into UserIdentity")
-	}
+	assert.Equal(t, "projects", second[0].Resource, "Permissions() mutation leaked into UserIdentity")
 }
 
 func TestUserIdentity_Permissions_NilPermissions(t *testing.T) {
+	t.Parallel()
 	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, nil)
 
 	got := identity.Permissions()
-	if got == nil {
-		t.Error("Permissions() returned nil, expected empty slice")
-	}
-	if len(got) != 0 {
-		t.Errorf("Permissions() returned %d entries, want 0", len(got))
-	}
+	assert.NotNil(t, got, "Permissions() returned nil, expected empty slice")
+	assert.Len(t, got, 0)
 }

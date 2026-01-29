@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	sserr "github.com/StricklySoft/stricklysoft-core/pkg/errors"
 )
 
@@ -120,9 +123,8 @@ type nestedRequiredDBConf struct {
 func writeTestFile(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("writeTestFile() error: %v", err)
-	}
+	err := os.WriteFile(path, []byte(content), 0o600)
+	require.NoError(t, err, "writeTestFile() error")
 	return path
 }
 
@@ -132,30 +134,27 @@ func writeTestFile(t *testing.T, name, content string) string {
 
 // TestNew_ReturnsNonNilLoader verifies that New returns a non-nil Loader.
 func TestNew_ReturnsNonNilLoader(t *testing.T) {
+	t.Parallel()
 	l := New()
-	if l == nil {
-		t.Fatal("New() = nil, want non-nil Loader")
-	}
+	require.NotNil(t, l, "New() = nil, want non-nil Loader")
 }
 
 // TestLoader_WithEnvPrefix_Chaining verifies that WithEnvPrefix returns
 // the same Loader for fluent chaining.
 func TestLoader_WithEnvPrefix_Chaining(t *testing.T) {
+	t.Parallel()
 	l := New()
 	got := l.WithEnvPrefix("APP")
-	if got != l {
-		t.Error("WithEnvPrefix() did not return the same Loader")
-	}
+	assert.Equal(t, l, got, "WithEnvPrefix() did not return the same Loader")
 }
 
 // TestLoader_WithFile_Chaining verifies that WithFile returns the same
 // Loader for fluent chaining.
 func TestLoader_WithFile_Chaining(t *testing.T) {
+	t.Parallel()
 	l := New()
 	got := l.WithFile("config.yaml")
-	if got != l {
-		t.Error("WithFile() did not return the same Loader")
-	}
+	assert.Equal(t, l, got, "WithFile() did not return the same Loader")
 }
 
 // ===========================================================================
@@ -165,38 +164,29 @@ func TestLoader_WithFile_Chaining(t *testing.T) {
 // TestLoader_Load_NilPointer verifies that Load returns an error when
 // given a nil pointer.
 func TestLoader_Load_NilPointer(t *testing.T) {
+	t.Parallel()
 	err := New().Load((*basicConfig)(nil))
-	if err == nil {
-		t.Fatal("Load(nil) expected error, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for nil pointer")
-	}
+	require.Error(t, err, "Load(nil) expected error, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for nil pointer")
 }
 
 // TestLoader_Load_NonPointer verifies that Load returns an error when
 // given a struct value (not a pointer).
 func TestLoader_Load_NonPointer(t *testing.T) {
+	t.Parallel()
 	err := New().Load(basicConfig{})
-	if err == nil {
-		t.Fatal("Load(struct) expected error, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for non-pointer")
-	}
+	require.Error(t, err, "Load(struct) expected error, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for non-pointer")
 }
 
 // TestLoader_Load_PointerToNonStruct verifies that Load returns an error
 // when given a pointer to a non-struct type.
 func TestLoader_Load_PointerToNonStruct(t *testing.T) {
+	t.Parallel()
 	n := 42
 	err := New().Load(&n)
-	if err == nil {
-		t.Fatal("Load(*int) expected error, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for non-struct pointer")
-	}
+	require.Error(t, err, "Load(*int) expected error, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for non-struct pointer")
 }
 
 // ===========================================================================
@@ -206,71 +196,49 @@ func TestLoader_Load_PointerToNonStruct(t *testing.T) {
 // TestLoader_Load_Defaults_Applied verifies that envDefault tags are
 // applied to zero-valued fields (string, int, bool, Duration).
 func TestLoader_Load_Defaults_Applied(t *testing.T) {
+	t.Parallel()
 	var cfg basicConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.Host != "localhost" {
-		t.Errorf("Host = %q, want %q", cfg.Host, "localhost")
-	}
-	if cfg.Port != 8080 {
-		t.Errorf("Port = %d, want %d", cfg.Port, 8080)
-	}
-	if cfg.Debug != false {
-		t.Errorf("Debug = %v, want false", cfg.Debug)
-	}
-	if cfg.Timeout != 30*time.Second {
-		t.Errorf("Timeout = %v, want %v", cfg.Timeout, 30*time.Second)
-	}
+	assert.Equal(t, "localhost", cfg.Host)
+	assert.Equal(t, 8080, cfg.Port)
+	assert.Equal(t, false, cfg.Debug)
+	assert.Equal(t, 30*time.Second, cfg.Timeout)
 }
 
 // TestLoader_Load_Defaults_NotOverwriteExisting verifies that envDefault
 // tags do not overwrite pre-existing non-zero values.
 func TestLoader_Load_Defaults_NotOverwriteExisting(t *testing.T) {
+	t.Parallel()
 	cfg := basicConfig{Host: "custom-host", Port: 9090}
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.Host != "custom-host" {
-		t.Errorf("Host = %q, want %q (should not be overwritten)", cfg.Host, "custom-host")
-	}
-	if cfg.Port != 9090 {
-		t.Errorf("Port = %d, want %d (should not be overwritten)", cfg.Port, 9090)
-	}
+	assert.Equal(t, "custom-host", cfg.Host, "should not be overwritten")
+	assert.Equal(t, 9090, cfg.Port, "should not be overwritten")
 }
 
 // TestLoader_Load_Defaults_Slice verifies that comma-separated envDefault
 // values are correctly parsed into a string slice.
 func TestLoader_Load_Defaults_Slice(t *testing.T) {
+	t.Parallel()
 	var cfg sliceConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if len(cfg.Tags) != 3 {
-		t.Fatalf("Tags length = %d, want 3", len(cfg.Tags))
-	}
+	require.Len(t, cfg.Tags, 3)
 	expected := []string{"a", "b", "c"}
 	for i, want := range expected {
-		if cfg.Tags[i] != want {
-			t.Errorf("Tags[%d] = %q, want %q", i, cfg.Tags[i], want)
-		}
+		assert.Equal(t, want, cfg.Tags[i], "Tags[%d]", i)
 	}
 }
 
 // TestLoader_Load_Defaults_Int32 verifies that int32 fields are correctly
 // parsed from envDefault tags.
 func TestLoader_Load_Defaults_Int32(t *testing.T) {
+	t.Parallel()
 	var cfg int32Config
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.MaxConns != 25 {
-		t.Errorf("MaxConns = %d, want 25", cfg.MaxConns)
-	}
+	assert.Equal(t, int32(25), cfg.MaxConns)
 }
 
 // ===========================================================================
@@ -279,6 +247,7 @@ func TestLoader_Load_Defaults_Int32(t *testing.T) {
 
 // TestLoader_Load_YAMLFile verifies that values are loaded from a YAML file.
 func TestLoader_Load_YAMLFile(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.yaml", `
 host: filehost
 port: 3000
@@ -287,74 +256,53 @@ timeout: 10s
 `)
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "filehost" {
-		t.Errorf("Host = %q, want %q", cfg.Host, "filehost")
-	}
-	if cfg.Port != 3000 {
-		t.Errorf("Port = %d, want %d", cfg.Port, 3000)
-	}
-	if cfg.Debug != true {
-		t.Errorf("Debug = %v, want true", cfg.Debug)
-	}
-	if cfg.Timeout != 10*time.Second {
-		t.Errorf("Timeout = %v, want %v", cfg.Timeout, 10*time.Second)
-	}
+	assert.Equal(t, "filehost", cfg.Host)
+	assert.Equal(t, 3000, cfg.Port)
+	assert.Equal(t, true, cfg.Debug)
+	assert.Equal(t, 10*time.Second, cfg.Timeout)
 }
 
 // TestLoader_Load_YAMLFile_OverridesDefaults verifies that file values
 // override envDefault values.
 func TestLoader_Load_YAMLFile_OverridesDefaults(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.yaml", `
 host: from-file
 port: 9999
 `)
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "from-file" {
-		t.Errorf("Host = %q, want %q (file should override default)", cfg.Host, "from-file")
-	}
-	if cfg.Port != 9999 {
-		t.Errorf("Port = %d, want %d (file should override default)", cfg.Port, 9999)
-	}
+	assert.Equal(t, "from-file", cfg.Host, "file should override default")
+	assert.Equal(t, 9999, cfg.Port, "file should override default")
 }
 
 // TestLoader_Load_MissingFile_NoError verifies that a missing config file
 // does not produce an error (file configuration is optional).
 func TestLoader_Load_MissingFile_NoError(t *testing.T) {
+	t.Parallel()
 	var cfg basicConfig
 	err := New().WithFile("/nonexistent/path/config.yaml").Load(&cfg)
-	if err != nil {
-		t.Fatalf("Load() with missing file error: %v (expected nil)", err)
-	}
+	require.NoError(t, err, "Load() with missing file should not error")
 
 	// Defaults should still be applied.
-	if cfg.Host != "localhost" {
-		t.Errorf("Host = %q, want %q (default should apply)", cfg.Host, "localhost")
-	}
+	assert.Equal(t, "localhost", cfg.Host, "default should apply")
 }
 
 // TestLoader_Load_YMLExtension verifies that .yml extension is recognized.
 func TestLoader_Load_YMLExtension(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.yml", `
 host: from-yml
 `)
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() with .yml error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "from-yml" {
-		t.Errorf("Host = %q, want %q", cfg.Host, "from-yml")
-	}
+	assert.Equal(t, "from-yml", cfg.Host)
 }
 
 // ===========================================================================
@@ -363,6 +311,7 @@ host: from-yml
 
 // TestLoader_Load_JSONFile verifies that values are loaded from a JSON file.
 func TestLoader_Load_JSONFile(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.json", `{
   "host": "json-host",
   "port": 4000,
@@ -370,31 +319,22 @@ func TestLoader_Load_JSONFile(t *testing.T) {
 }`)
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "json-host" {
-		t.Errorf("Host = %q, want %q", cfg.Host, "json-host")
-	}
-	if cfg.Port != 4000 {
-		t.Errorf("Port = %d, want %d", cfg.Port, 4000)
-	}
+	assert.Equal(t, "json-host", cfg.Host)
+	assert.Equal(t, 4000, cfg.Port)
 }
 
 // TestLoader_Load_UnsupportedExtension verifies that an unsupported file
 // extension returns a CodeInternalConfiguration error.
 func TestLoader_Load_UnsupportedExtension(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.toml", `host = "test"`)
 
 	var cfg basicConfig
 	err := New().WithFile(path).Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() with .toml expected error, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for unsupported extension")
-	}
+	require.Error(t, err, "Load() with .toml expected error, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for unsupported extension")
 }
 
 // ===========================================================================
@@ -404,14 +344,11 @@ func TestLoader_Load_UnsupportedExtension(t *testing.T) {
 // TestLoader_Load_DirectoryTraversal verifies that file paths containing
 // directory traversal sequences are rejected.
 func TestLoader_Load_DirectoryTraversal(t *testing.T) {
+	t.Parallel()
 	var cfg basicConfig
 	err := New().WithFile("../../../etc/passwd").Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() with directory traversal expected error, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for directory traversal")
-	}
+	require.Error(t, err, "Load() with directory traversal expected error, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for directory traversal")
 }
 
 // ===========================================================================
@@ -430,16 +367,10 @@ port: 3000
 	t.Setenv("PORT", "5000")
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "from-env" {
-		t.Errorf("Host = %q, want %q (env should override file)", cfg.Host, "from-env")
-	}
-	if cfg.Port != 5000 {
-		t.Errorf("Port = %d, want %d (env should override file)", cfg.Port, 5000)
-	}
+	assert.Equal(t, "from-env", cfg.Host, "env should override file")
+	assert.Equal(t, 5000, cfg.Port, "env should override file")
 }
 
 // TestLoader_Load_EnvOverridesDefault verifies that environment variables
@@ -448,13 +379,9 @@ func TestLoader_Load_EnvOverridesDefault(t *testing.T) {
 	t.Setenv("HOST", "env-host")
 
 	var cfg basicConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.Host != "env-host" {
-		t.Errorf("Host = %q, want %q (env should override default)", cfg.Host, "env-host")
-	}
+	assert.Equal(t, "env-host", cfg.Host, "env should override default")
 }
 
 // TestLoader_Load_EnvPrefix verifies that WithEnvPrefix prepends the
@@ -464,16 +391,10 @@ func TestLoader_Load_EnvPrefix(t *testing.T) {
 	t.Setenv("APP_PORT", "7070")
 
 	var cfg basicConfig
-	if err := New().WithEnvPrefix("APP").Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithEnvPrefix("APP").Load(&cfg))
 
-	if cfg.Host != "prefixed-host" {
-		t.Errorf("Host = %q, want %q", cfg.Host, "prefixed-host")
-	}
-	if cfg.Port != 7070 {
-		t.Errorf("Port = %d, want %d", cfg.Port, 7070)
-	}
+	assert.Equal(t, "prefixed-host", cfg.Host)
+	assert.Equal(t, 7070, cfg.Port)
 }
 
 // TestLoader_Load_EnvPrefix_UppercaseNormalization verifies that a
@@ -482,18 +403,15 @@ func TestLoader_Load_EnvPrefix_UppercaseNormalization(t *testing.T) {
 	t.Setenv("MYAPP_HOST", "upper-host")
 
 	var cfg basicConfig
-	if err := New().WithEnvPrefix("myapp").Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithEnvPrefix("myapp").Load(&cfg))
 
-	if cfg.Host != "upper-host" {
-		t.Errorf("Host = %q, want %q (prefix should be uppercased)", cfg.Host, "upper-host")
-	}
+	assert.Equal(t, "upper-host", cfg.Host, "prefix should be uppercased")
 }
 
 // TestLoader_Load_EnvNotSet_KeepsFileValue verifies that an unset
 // environment variable does not clear the file value.
 func TestLoader_Load_EnvNotSet_KeepsFileValue(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.yaml", `
 host: from-file
 `)
@@ -501,14 +419,9 @@ host: from-file
 	// Do NOT set HOST env var.
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "from-file" {
-		t.Errorf("Host = %q, want %q (unset env should preserve file value)",
-			cfg.Host, "from-file")
-	}
+	assert.Equal(t, "from-file", cfg.Host, "unset env should preserve file value")
 }
 
 // ===========================================================================
@@ -531,8 +444,8 @@ func TestLoader_Load_Types(t *testing.T) {
 			loadCfg: func(t *testing.T) error {
 				var cfg basicConfig
 				err := New().Load(&cfg)
-				if err == nil && cfg.Host != "example.com" {
-					t.Errorf("Host = %q, want %q", cfg.Host, "example.com")
+				if err == nil {
+					assert.Equal(t, "example.com", cfg.Host)
 				}
 				return err
 			},
@@ -544,8 +457,8 @@ func TestLoader_Load_Types(t *testing.T) {
 			loadCfg: func(t *testing.T) error {
 				var cfg basicConfig
 				err := New().Load(&cfg)
-				if err == nil && cfg.Port != 9090 {
-					t.Errorf("Port = %d, want %d", cfg.Port, 9090)
+				if err == nil {
+					assert.Equal(t, 9090, cfg.Port)
 				}
 				return err
 			},
@@ -557,8 +470,8 @@ func TestLoader_Load_Types(t *testing.T) {
 			loadCfg: func(t *testing.T) error {
 				var cfg int32Config
 				err := New().Load(&cfg)
-				if err == nil && cfg.MaxConns != 50 {
-					t.Errorf("MaxConns = %d, want %d", cfg.MaxConns, 50)
+				if err == nil {
+					assert.Equal(t, int32(50), cfg.MaxConns)
 				}
 				return err
 			},
@@ -570,8 +483,8 @@ func TestLoader_Load_Types(t *testing.T) {
 			loadCfg: func(t *testing.T) error {
 				var cfg basicConfig
 				err := New().Load(&cfg)
-				if err == nil && !cfg.Debug {
-					t.Error("Debug = false, want true")
+				if err == nil {
+					assert.True(t, cfg.Debug, "Debug = false, want true")
 				}
 				return err
 			},
@@ -583,8 +496,8 @@ func TestLoader_Load_Types(t *testing.T) {
 			loadCfg: func(t *testing.T) error {
 				var cfg basicConfig
 				err := New().Load(&cfg)
-				if err == nil && !cfg.Debug {
-					t.Error("Debug = false, want true (from '1')")
+				if err == nil {
+					assert.True(t, cfg.Debug, "Debug = false, want true (from '1')")
 				}
 				return err
 			},
@@ -597,8 +510,8 @@ func TestLoader_Load_Types(t *testing.T) {
 				var cfg basicConfig
 				err := New().Load(&cfg)
 				expected := 90 * time.Minute
-				if err == nil && cfg.Timeout != expected {
-					t.Errorf("Timeout = %v, want %v", cfg.Timeout, expected)
+				if err == nil {
+					assert.Equal(t, expected, cfg.Timeout)
 				}
 				return err
 			},
@@ -611,14 +524,10 @@ func TestLoader_Load_Types(t *testing.T) {
 				var cfg sliceConfig
 				err := New().Load(&cfg)
 				if err == nil {
-					if len(cfg.Tags) != 3 {
-						t.Fatalf("Tags length = %d, want 3", len(cfg.Tags))
-					}
+					require.Len(t, cfg.Tags, 3)
 					expected := []string{"x", "y", "z"}
 					for i, want := range expected {
-						if cfg.Tags[i] != want {
-							t.Errorf("Tags[%d] = %q, want %q", i, cfg.Tags[i], want)
-						}
+						assert.Equal(t, want, cfg.Tags[i], "Tags[%d]", i)
 					}
 				}
 				return err
@@ -632,12 +541,8 @@ func TestLoader_Load_Types(t *testing.T) {
 				var cfg secretConfig
 				err := New().Load(&cfg)
 				if err == nil {
-					if cfg.Password.Value() != "s3cret" {
-						t.Errorf("Password.Value() = %q, want %q", cfg.Password.Value(), "s3cret")
-					}
-					if cfg.Password.String() != "[REDACTED]" {
-						t.Errorf("Password.String() = %q, want %q", cfg.Password.String(), "[REDACTED]")
-					}
+					assert.Equal(t, "s3cret", cfg.Password.Value())
+					assert.Equal(t, "[REDACTED]", cfg.Password.String())
 				}
 				return err
 			},
@@ -647,9 +552,7 @@ func TestLoader_Load_Types(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(tt.envKey, tt.envVal)
-			if err := tt.loadCfg(t); err != nil {
-				t.Fatalf("Load() error: %v", err)
-			}
+			require.NoError(t, tt.loadCfg(t))
 		})
 	}
 }
@@ -665,16 +568,10 @@ func TestLoader_Load_SecretFromEnv(t *testing.T) {
 	t.Setenv("PASSWORD", "my-secret-password")
 
 	var cfg secretConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.Password.Value() != "my-secret-password" {
-		t.Errorf("Password.Value() = %q, want %q", cfg.Password.Value(), "my-secret-password")
-	}
-	if cfg.Password.String() != "[REDACTED]" {
-		t.Errorf("Password.String() = %q, want %q", cfg.Password.String(), "[REDACTED]")
-	}
+	assert.Equal(t, "my-secret-password", cfg.Password.Value())
+	assert.Equal(t, "[REDACTED]", cfg.Password.String())
 }
 
 // ===========================================================================
@@ -690,23 +587,12 @@ func TestLoader_Load_NestedStruct_Env(t *testing.T) {
 	t.Setenv("DB_PASSWORD", "dbpass")
 
 	var cfg nestedConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.App != "my-app" {
-		t.Errorf("App = %q, want %q", cfg.App, "my-app")
-	}
-	if cfg.Database.Host != "db.example.com" {
-		t.Errorf("Database.Host = %q, want %q", cfg.Database.Host, "db.example.com")
-	}
-	if cfg.Database.Port != 5432 {
-		t.Errorf("Database.Port = %d, want %d", cfg.Database.Port, 5432)
-	}
-	if cfg.Database.Password.Value() != "dbpass" {
-		t.Errorf("Database.Password.Value() = %q, want %q",
-			cfg.Database.Password.Value(), "dbpass")
-	}
+	assert.Equal(t, "my-app", cfg.App)
+	assert.Equal(t, "db.example.com", cfg.Database.Host)
+	assert.Equal(t, 5432, cfg.Database.Port)
+	assert.Equal(t, "dbpass", cfg.Database.Password.Value())
 }
 
 // TestLoader_Load_NestedStruct_WithPrefix verifies that the global env
@@ -716,21 +602,16 @@ func TestLoader_Load_NestedStruct_WithPrefix(t *testing.T) {
 	t.Setenv("MYAPP_DB_PORT", "3306")
 
 	var cfg nestedConfig
-	if err := New().WithEnvPrefix("MYAPP").Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithEnvPrefix("MYAPP").Load(&cfg))
 
-	if cfg.Database.Host != "prefixed-db" {
-		t.Errorf("Database.Host = %q, want %q", cfg.Database.Host, "prefixed-db")
-	}
-	if cfg.Database.Port != 3306 {
-		t.Errorf("Database.Port = %d, want %d", cfg.Database.Port, 3306)
-	}
+	assert.Equal(t, "prefixed-db", cfg.Database.Host)
+	assert.Equal(t, 3306, cfg.Database.Port)
 }
 
 // TestLoader_Load_NestedStruct_File verifies that nested struct fields
 // are loaded from a YAML file with nested structure.
 func TestLoader_Load_NestedStruct_File(t *testing.T) {
+	t.Parallel()
 	// Note: YAML uses the yaml tags, but our nestedConfig struct uses
 	// env tags on the parent. The YAML structure must match the Go
 	// struct field names (or yaml tags). Since dbSubConfig has yaml
@@ -743,19 +624,11 @@ database:
 `)
 
 	var cfg nestedConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.App != "yaml-app" {
-		t.Errorf("App = %q, want %q", cfg.App, "yaml-app")
-	}
-	if cfg.Database.Host != "yaml-db-host" {
-		t.Errorf("Database.Host = %q, want %q", cfg.Database.Host, "yaml-db-host")
-	}
-	if cfg.Database.Port != 5433 {
-		t.Errorf("Database.Port = %d, want %d", cfg.Database.Port, 5433)
-	}
+	assert.Equal(t, "yaml-app", cfg.App)
+	assert.Equal(t, "yaml-db-host", cfg.Database.Host)
+	assert.Equal(t, 5433, cfg.Database.Port)
 }
 
 // ===========================================================================
@@ -768,57 +641,42 @@ func TestLoader_Load_RequiredField_Set(t *testing.T) {
 	t.Setenv("NAME", "test-name")
 
 	var cfg requiredConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.Name != "test-name" {
-		t.Errorf("Name = %q, want %q", cfg.Name, "test-name")
-	}
+	assert.Equal(t, "test-name", cfg.Name)
 }
 
 // TestLoader_Load_RequiredField_Missing verifies that a missing required
 // field returns a CodeValidationRequired error with the field name.
 func TestLoader_Load_RequiredField_Missing(t *testing.T) {
+	t.Parallel()
 	var cfg requiredConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for missing required field, got nil")
-	}
+	require.Error(t, err, "Load() expected error for missing required field, got nil")
 
 	var ssErr *sserr.Error
-	if !errors.As(err, &ssErr) {
-		t.Fatalf("error type = %T, want *sserr.Error", err)
-	}
-	if ssErr.Code != sserr.CodeValidationRequired {
-		t.Errorf("error code = %q, want %q", ssErr.Code, sserr.CodeValidationRequired)
-	}
+	require.True(t, errors.As(err, &ssErr), "error type = %T, want *sserr.Error", err)
+	assert.Equal(t, sserr.CodeValidationRequired, ssErr.Code)
 }
 
 // TestLoader_Load_RequiredField_ErrorIsValidation verifies that the
 // required field error is classified as a validation error.
 func TestLoader_Load_RequiredField_ErrorIsValidation(t *testing.T) {
+	t.Parallel()
 	var cfg requiredConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error, got nil")
-	}
-	if !sserr.IsValidation(err) {
-		t.Error("IsValidation() = false, want true for required field violation")
-	}
+	require.Error(t, err, "Load() expected error, got nil")
+	assert.True(t, sserr.IsValidation(err), "IsValidation() = false, want true for required field violation")
 }
 
 // TestLoader_Load_NestedRequiredField_Missing verifies that required
 // validation works for nested struct fields with dotted path in error.
 func TestLoader_Load_NestedRequiredField_Missing(t *testing.T) {
+	t.Parallel()
 	var cfg nestedRequiredConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for nested required field, got nil")
-	}
-	if !sserr.IsValidation(err) {
-		t.Error("IsValidation() = false, want true for nested required field")
-	}
+	require.Error(t, err, "Load() expected error for nested required field, got nil")
+	assert.True(t, sserr.IsValidation(err), "IsValidation() = false, want true for nested required field")
 }
 
 // ===========================================================================
@@ -832,13 +690,9 @@ func TestLoader_Load_Validator_Called(t *testing.T) {
 	t.Setenv("PORT", "8080")
 
 	var cfg validatableConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v (Validator should pass for port 8080)", err)
-	}
+	require.NoError(t, New().Load(&cfg), "Validator should pass for port 8080")
 
-	if cfg.Port != 8080 {
-		t.Errorf("Port = %d, want 8080", cfg.Port)
-	}
+	assert.Equal(t, 8080, cfg.Port)
 }
 
 // TestLoader_Load_Validator_ReturnsError verifies that a Validate()
@@ -849,26 +703,19 @@ func TestLoader_Load_Validator_ReturnsError(t *testing.T) {
 
 	var cfg validatableConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error from Validator, got nil")
-	}
-	if !sserr.IsValidation(err) {
-		t.Errorf("IsValidation() = false, want true for Validator error")
-	}
+	require.Error(t, err, "Load() expected error from Validator, got nil")
+	assert.True(t, sserr.IsValidation(err), "IsValidation() = false, want true for Validator error")
 }
 
 // TestLoader_Load_Validator_StdlibError verifies that stdlib errors from
 // Validate() are wrapped with CodeValidation.
 func TestLoader_Load_Validator_StdlibError(t *testing.T) {
+	t.Parallel()
 	// Don't set NAME — triggers Validate() failure.
 	var cfg validatableStdlibConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error from Validator, got nil")
-	}
-	if !sserr.IsValidation(err) {
-		t.Errorf("IsValidation() = false, want true for wrapped stdlib error")
-	}
+	require.Error(t, err, "Load() expected error from Validator, got nil")
+	assert.True(t, sserr.IsValidation(err), "IsValidation() = false, want true for wrapped stdlib error")
 }
 
 // TestLoader_Load_Validator_NotCalledOnRequiredFailure verifies that
@@ -877,28 +724,20 @@ func TestLoader_Load_Validator_StdlibError(t *testing.T) {
 // AND the Validator interface, then leaves the required field empty
 // and asserts that Validate() was never invoked.
 func TestLoader_Load_Validator_NotCalledOnRequiredFailure(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	cfg := requiredValidatableConfig{validateCalls: &calls}
 
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for missing required field, got nil")
-	}
+	require.Error(t, err, "Load() expected error for missing required field, got nil")
 
 	// The error must come from required tag validation, not from Validator.
 	var ssErr *sserr.Error
-	if !errors.As(err, &ssErr) {
-		t.Fatalf("error type = %T, want *sserr.Error", err)
-	}
-	if ssErr.Code != sserr.CodeValidationRequired {
-		t.Errorf("error code = %q, want %q (required should fail before Validator)",
-			ssErr.Code, sserr.CodeValidationRequired)
-	}
+	require.True(t, errors.As(err, &ssErr), "error type = %T, want *sserr.Error", err)
+	assert.Equal(t, sserr.CodeValidationRequired, ssErr.Code, "required should fail before Validator")
 
 	// The critical assertion: Validate() must not have been called.
-	if calls != 0 {
-		t.Errorf("Validate() called %d time(s), want 0 (should not run when required fails)", calls)
-	}
+	assert.Equal(t, 0, calls, "Validate() should not run when required fails")
 }
 
 // ===========================================================================
@@ -918,55 +757,39 @@ port: 3000
 	// Do NOT set PORT env var — file value should be used.
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
 	// Host: env wins over file.
-	if cfg.Host != "from-env" {
-		t.Errorf("Host = %q, want %q (env > file)", cfg.Host, "from-env")
-	}
+	assert.Equal(t, "from-env", cfg.Host, "env > file")
 	// Port: file wins over default.
-	if cfg.Port != 3000 {
-		t.Errorf("Port = %d, want %d (file > default)", cfg.Port, 3000)
-	}
+	assert.Equal(t, 3000, cfg.Port, "file > default")
 	// Timeout: default only (not in file, not in env).
-	if cfg.Timeout != 30*time.Second {
-		t.Errorf("Timeout = %v, want %v (default only)", cfg.Timeout, 30*time.Second)
-	}
+	assert.Equal(t, 30*time.Second, cfg.Timeout, "default only")
 }
 
 // TestLoader_Load_FileOverridesDefault verifies that file values
 // override envDefault values.
 func TestLoader_Load_FileOverridesDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "config.yaml", `
 host: file-host
 `)
 
 	var cfg basicConfig
-	if err := New().WithFile(path).Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().WithFile(path).Load(&cfg))
 
-	if cfg.Host != "file-host" {
-		t.Errorf("Host = %q, want %q (file > default)", cfg.Host, "file-host")
-	}
+	assert.Equal(t, "file-host", cfg.Host, "file > default")
 }
 
 // TestLoader_Load_DefaultOnly verifies that envDefault values are used
 // when no file or env vars are provided.
 func TestLoader_Load_DefaultOnly(t *testing.T) {
+	t.Parallel()
 	var cfg basicConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if cfg.Host != "localhost" {
-		t.Errorf("Host = %q, want %q (default only)", cfg.Host, "localhost")
-	}
-	if cfg.Port != 8080 {
-		t.Errorf("Port = %d, want %d (default only)", cfg.Port, 8080)
-	}
+	assert.Equal(t, "localhost", cfg.Host, "default only")
+	assert.Equal(t, 8080, cfg.Port, "default only")
 }
 
 // ===========================================================================
@@ -976,31 +799,23 @@ func TestLoader_Load_DefaultOnly(t *testing.T) {
 // TestMustLoad_Success verifies that MustLoad returns a populated struct
 // when loading succeeds.
 func TestMustLoad_Success(t *testing.T) {
+	t.Parallel()
 	cfg := MustLoad[basicConfig](New())
 
-	if cfg.Host != "localhost" {
-		t.Errorf("Host = %q, want %q", cfg.Host, "localhost")
-	}
-	if cfg.Port != 8080 {
-		t.Errorf("Port = %d, want %d", cfg.Port, 8080)
-	}
+	assert.Equal(t, "localhost", cfg.Host)
+	assert.Equal(t, 8080, cfg.Port)
 }
 
 // TestMustLoad_Panics verifies that MustLoad panics when a required
 // field is missing.
 func TestMustLoad_Panics(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		r := recover()
-		if r == nil {
-			t.Fatal("MustLoad() expected panic, got none")
-		}
+		require.NotNil(t, r, "MustLoad() expected panic, got none")
 		msg, ok := r.(string)
-		if !ok {
-			t.Fatalf("panic value type = %T, want string", r)
-		}
-		if msg == "" {
-			t.Error("panic message is empty, want descriptive message")
-		}
+		require.True(t, ok, "panic value type = %T, want string", r)
+		assert.NotEmpty(t, msg, "panic message is empty, want descriptive message")
 	}()
 
 	_ = MustLoad[requiredConfig](New())
@@ -1017,12 +832,8 @@ func TestLoader_Load_InvalidInt_FromEnv(t *testing.T) {
 
 	var cfg basicConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for invalid int, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for parse error")
-	}
+	require.Error(t, err, "Load() expected error for invalid int, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for parse error")
 }
 
 // TestLoader_Load_InvalidBool_FromEnv verifies that an invalid bool
@@ -1032,12 +843,8 @@ func TestLoader_Load_InvalidBool_FromEnv(t *testing.T) {
 
 	var cfg basicConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for invalid bool, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for parse error")
-	}
+	require.Error(t, err, "Load() expected error for invalid bool, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for parse error")
 }
 
 // TestLoader_Load_InvalidDuration_FromEnv verifies that an invalid
@@ -1047,17 +854,14 @@ func TestLoader_Load_InvalidDuration_FromEnv(t *testing.T) {
 
 	var cfg basicConfig
 	err := New().Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for invalid duration, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for parse error")
-	}
+	require.Error(t, err, "Load() expected error for invalid duration, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for parse error")
 }
 
 // TestLoader_Load_InvalidYAML_File verifies that a malformed YAML file
 // returns an error.
 func TestLoader_Load_InvalidYAML_File(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "bad.yaml", `
 host: [invalid yaml
   missing closing bracket
@@ -1065,27 +869,20 @@ host: [invalid yaml
 
 	var cfg basicConfig
 	err := New().WithFile(path).Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for malformed YAML, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for YAML parse error")
-	}
+	require.Error(t, err, "Load() expected error for malformed YAML, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for YAML parse error")
 }
 
 // TestLoader_Load_InvalidJSON_File verifies that a malformed JSON file
 // returns an error.
 func TestLoader_Load_InvalidJSON_File(t *testing.T) {
+	t.Parallel()
 	path := writeTestFile(t, "bad.json", `{"host": invalid}`)
 
 	var cfg basicConfig
 	err := New().WithFile(path).Load(&cfg)
-	if err == nil {
-		t.Fatal("Load() expected error for malformed JSON, got nil")
-	}
-	if !sserr.IsInternal(err) {
-		t.Errorf("IsInternal() = false, want true for JSON parse error")
-	}
+	require.Error(t, err, "Load() expected error for malformed JSON, got nil")
+	assert.True(t, sserr.IsInternal(err), "IsInternal() = false, want true for JSON parse error")
 }
 
 // ===========================================================================
@@ -1096,19 +893,14 @@ func TestLoader_Load_InvalidJSON_File(t *testing.T) {
 // (e.g., type Tags []string) are correctly populated from envDefault
 // tags without panicking.
 func TestLoader_Load_NamedSlice_FromDefault(t *testing.T) {
+	t.Parallel()
 	var cfg namedSliceConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if len(cfg.Tags) != 3 {
-		t.Fatalf("Tags length = %d, want 3", len(cfg.Tags))
-	}
+	require.Len(t, cfg.Tags, 3)
 	expected := []string{"a", "b", "c"}
 	for i, want := range expected {
-		if cfg.Tags[i] != want {
-			t.Errorf("Tags[%d] = %q, want %q", i, cfg.Tags[i], want)
-		}
+		assert.Equal(t, want, cfg.Tags[i], "Tags[%d]", i)
 	}
 }
 
@@ -1118,18 +910,12 @@ func TestLoader_Load_NamedSlice_FromEnv(t *testing.T) {
 	t.Setenv("TAGS", "x, y, z")
 
 	var cfg namedSliceConfig
-	if err := New().Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, New().Load(&cfg))
 
-	if len(cfg.Tags) != 3 {
-		t.Fatalf("Tags length = %d, want 3", len(cfg.Tags))
-	}
+	require.Len(t, cfg.Tags, 3)
 	expected := []string{"x", "y", "z"}
 	for i, want := range expected {
-		if cfg.Tags[i] != want {
-			t.Errorf("Tags[%d] = %q, want %q", i, cfg.Tags[i], want)
-		}
+		assert.Equal(t, want, cfg.Tags[i], "Tags[%d]", i)
 	}
 }
 
@@ -1181,13 +967,9 @@ timeout: 5s
 
 	start := time.Now()
 	var cfg basicConfig
-	if err := loader.Load(&cfg); err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
+	require.NoError(t, loader.Load(&cfg))
 	elapsed := time.Since(start)
 
 	const maxLoadTime = 50 * time.Millisecond
-	if elapsed > maxLoadTime {
-		t.Errorf("Load() took %v, want < %v (NFR-1)", elapsed, maxLoadTime)
-	}
+	assert.LessOrEqual(t, elapsed, maxLoadTime, "Load() took %v, want < %v (NFR-1)", elapsed, maxLoadTime)
 }

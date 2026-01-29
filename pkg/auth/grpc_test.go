@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -41,6 +43,7 @@ func newTestIdentity() Identity {
 // ---------------------------------------------------------------------------
 
 func TestUnaryServerInterceptor_ValidToken(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -55,24 +58,17 @@ func TestUnaryServerInterceptor_ValidToken(t *testing.T) {
 	}
 
 	resp, err := interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
-	if resp != "response" {
-		t.Errorf("response = %v, want %q", resp, "response")
-	}
+	require.NoError(t, err, "interceptor returned error")
+	assert.Equal(t, "response", resp)
 
 	// Verify identity was set in context.
 	identity, ok := IdentityFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("identity not found in context after interceptor")
-	}
-	if identity.ID() != "user-42" {
-		t.Errorf("identity.ID() = %q, want %q", identity.ID(), "user-42")
-	}
+	require.True(t, ok, "identity not found in context after interceptor")
+	assert.Equal(t, "user-42", identity.ID())
 }
 
 func TestUnaryServerInterceptor_MissingMetadata(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -84,19 +80,14 @@ func TestUnaryServerInterceptor_MissingMetadata(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err == nil {
-		t.Fatal("interceptor should return error when metadata is missing")
-	}
+	require.Error(t, err, "interceptor should return error when metadata is missing")
 	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("error is not a gRPC status: %v", err)
-	}
-	if st.Code() != codes.Unauthenticated {
-		t.Errorf("status code = %v, want %v", st.Code(), codes.Unauthenticated)
-	}
+	require.True(t, ok, "error is not a gRPC status: %v", err)
+	assert.Equal(t, codes.Unauthenticated, st.Code())
 }
 
 func TestUnaryServerInterceptor_MissingAuthorizationHeader(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -110,16 +101,13 @@ func TestUnaryServerInterceptor_MissingAuthorizationHeader(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err == nil {
-		t.Fatal("interceptor should return error when authorization is missing")
-	}
+	require.Error(t, err, "interceptor should return error when authorization is missing")
 	st, _ := status.FromError(err)
-	if st.Code() != codes.Unauthenticated {
-		t.Errorf("status code = %v, want %v", st.Code(), codes.Unauthenticated)
-	}
+	assert.Equal(t, codes.Unauthenticated, st.Code())
 }
 
 func TestUnaryServerInterceptor_InvalidToken(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{err: errors.New("token expired")}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -132,16 +120,13 @@ func TestUnaryServerInterceptor_InvalidToken(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err == nil {
-		t.Fatal("interceptor should return error when token is invalid")
-	}
+	require.Error(t, err, "interceptor should return error when token is invalid")
 	st, _ := status.FromError(err)
-	if st.Code() != codes.Unauthenticated {
-		t.Errorf("status code = %v, want %v", st.Code(), codes.Unauthenticated)
-	}
+	assert.Equal(t, codes.Unauthenticated, st.Code())
 }
 
 func TestUnaryServerInterceptor_InvalidBearerFormat(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -155,16 +140,13 @@ func TestUnaryServerInterceptor_InvalidBearerFormat(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err == nil {
-		t.Fatal("interceptor should return error for non-Bearer auth")
-	}
+	require.Error(t, err, "interceptor should return error for non-Bearer auth")
 	st, _ := status.FromError(err)
-	if st.Code() != codes.Unauthenticated {
-		t.Errorf("status code = %v, want %v", st.Code(), codes.Unauthenticated)
-	}
+	assert.Equal(t, codes.Unauthenticated, st.Code())
 }
 
 func TestUnaryServerInterceptor_WithCallerService(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -181,20 +163,15 @@ func TestUnaryServerInterceptor_WithCallerService(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	caller, ok := CallerServiceFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("caller service not found in context")
-	}
-	if caller != "upstream-gateway" {
-		t.Errorf("caller = %q, want %q", caller, "upstream-gateway")
-	}
+	require.True(t, ok, "caller service not found in context")
+	assert.Equal(t, "upstream-gateway", caller)
 }
 
 func TestUnaryServerInterceptor_WithCallChain(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := UnaryServerInterceptor(validator, "test-service")
 
@@ -207,9 +184,7 @@ func TestUnaryServerInterceptor_WithCallChain(t *testing.T) {
 		},
 	}
 	encodedChain, err := SerializeCallChain(chain)
-	if err != nil {
-		t.Fatalf("SerializeCallChain error: %v", err)
-	}
+	require.NoError(t, err, "SerializeCallChain error")
 
 	md := metadata.Pairs(
 		HeaderAuthorization, "Bearer valid-token",
@@ -224,20 +199,12 @@ func TestUnaryServerInterceptor_WithCallChain(t *testing.T) {
 	}
 
 	_, err = interceptor(ctx, "request", &grpc.UnaryServerInfo{}, handler)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	gotChain, ok := CallChainFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("call chain not found in context")
-	}
-	if gotChain.OriginalID != "user-42" {
-		t.Errorf("chain.OriginalID = %q, want %q", gotChain.OriginalID, "user-42")
-	}
-	if len(gotChain.Callers) != 1 {
-		t.Fatalf("chain.Callers has %d entries, want 1", len(gotChain.Callers))
-	}
+	require.True(t, ok, "call chain not found in context")
+	assert.Equal(t, "user-42", gotChain.OriginalID)
+	require.Len(t, gotChain.Callers, 1)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +222,7 @@ func (m *mockServerStream) Context() context.Context {
 }
 
 func TestStreamServerInterceptor_ValidToken(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := StreamServerInterceptor(validator, "test-service")
 
@@ -269,20 +237,15 @@ func TestStreamServerInterceptor_ValidToken(t *testing.T) {
 	}
 
 	err := interceptor(nil, stream, &grpc.StreamServerInfo{}, handler)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	identity, ok := IdentityFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("identity not found in stream context")
-	}
-	if identity.ID() != "user-42" {
-		t.Errorf("identity.ID() = %q, want %q", identity.ID(), "user-42")
-	}
+	require.True(t, ok, "identity not found in stream context")
+	assert.Equal(t, "user-42", identity.ID())
 }
 
 func TestStreamServerInterceptor_MissingAuth(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	interceptor := StreamServerInterceptor(validator, "test-service")
 
@@ -295,13 +258,9 @@ func TestStreamServerInterceptor_MissingAuth(t *testing.T) {
 	}
 
 	err := interceptor(nil, stream, &grpc.StreamServerInfo{}, handler)
-	if err == nil {
-		t.Fatal("interceptor should return error when auth is missing")
-	}
+	require.Error(t, err, "interceptor should return error when auth is missing")
 	st, _ := status.FromError(err)
-	if st.Code() != codes.Unauthenticated {
-		t.Errorf("status code = %v, want %v", st.Code(), codes.Unauthenticated)
-	}
+	assert.Equal(t, codes.Unauthenticated, st.Code())
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +268,7 @@ func TestStreamServerInterceptor_MissingAuth(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUnaryClientInterceptor_PropagatesIdentity(t *testing.T) {
+	t.Parallel()
 	interceptor := UnaryClientInterceptor("client-service")
 
 	// Set up context with identity.
@@ -322,51 +282,35 @@ func TestUnaryClientInterceptor_PropagatesIdentity(t *testing.T) {
 	}
 
 	err := interceptor(ctx, "/test.Service/Method", "req", "reply", nil, invoker)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	// Verify outgoing metadata contains identity headers.
 	md, ok := metadata.FromOutgoingContext(capturedCtx)
-	if !ok {
-		t.Fatal("no outgoing metadata in context")
-	}
+	require.True(t, ok, "no outgoing metadata in context")
 
 	idValues := md.Get(HeaderIdentityID)
-	if len(idValues) == 0 || idValues[0] != "user-42" {
-		t.Errorf("metadata identity-id = %v, want [\"user-42\"]", idValues)
-	}
+	require.NotEmpty(t, idValues)
+	assert.Equal(t, "user-42", idValues[0])
 
 	typeValues := md.Get(HeaderIdentityType)
-	if len(typeValues) == 0 || typeValues[0] != "user" {
-		t.Errorf("metadata identity-type = %v, want [\"user\"]", typeValues)
-	}
+	require.NotEmpty(t, typeValues)
+	assert.Equal(t, "user", typeValues[0])
 
 	callerValues := md.Get(HeaderCallerService)
-	if len(callerValues) == 0 || callerValues[0] != "client-service" {
-		t.Errorf("metadata caller-service = %v, want [\"client-service\"]", callerValues)
-	}
+	require.NotEmpty(t, callerValues)
+	assert.Equal(t, "client-service", callerValues[0])
 
 	chainValues := md.Get(HeaderCallChain)
-	if len(chainValues) == 0 {
-		t.Fatal("metadata call-chain is missing")
-	}
+	require.NotEmpty(t, chainValues, "metadata call-chain is missing")
 	chain, err := DeserializeCallChain(chainValues[0])
-	if err != nil {
-		t.Fatalf("DeserializeCallChain error: %v", err)
-	}
-	if chain.OriginalID != "user-42" {
-		t.Errorf("chain.OriginalID = %q, want %q", chain.OriginalID, "user-42")
-	}
-	if len(chain.Callers) != 1 {
-		t.Fatalf("chain.Callers has %d entries, want 1", len(chain.Callers))
-	}
-	if chain.Callers[0].ServiceName != "client-service" {
-		t.Errorf("chain.Callers[0].ServiceName = %q, want %q", chain.Callers[0].ServiceName, "client-service")
-	}
+	require.NoError(t, err, "DeserializeCallChain error")
+	assert.Equal(t, "user-42", chain.OriginalID)
+	require.Len(t, chain.Callers, 1)
+	assert.Equal(t, "client-service", chain.Callers[0].ServiceName)
 }
 
 func TestUnaryClientInterceptor_NoIdentity(t *testing.T) {
+	t.Parallel()
 	interceptor := UnaryClientInterceptor("client-service")
 
 	// Context without identity — interceptor should pass through without modification.
@@ -379,18 +323,15 @@ func TestUnaryClientInterceptor_NoIdentity(t *testing.T) {
 	}
 
 	err := interceptor(ctx, "/test.Service/Method", "req", "reply", nil, invoker)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	// No outgoing metadata should be added.
 	_, ok := metadata.FromOutgoingContext(capturedCtx)
-	if ok {
-		t.Error("outgoing metadata should not be set when no identity is present")
-	}
+	assert.False(t, ok, "outgoing metadata should not be set when no identity is present")
 }
 
 func TestUnaryClientInterceptor_ExistingCallChain(t *testing.T) {
+	t.Parallel()
 	interceptor := UnaryClientInterceptor("downstream-service")
 
 	// Set up context with identity and an existing call chain.
@@ -412,36 +353,23 @@ func TestUnaryClientInterceptor_ExistingCallChain(t *testing.T) {
 	}
 
 	err := interceptor(ctx, "/test.Service/Method", "req", "reply", nil, invoker)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	md, ok := metadata.FromOutgoingContext(capturedCtx)
-	if !ok {
-		t.Fatal("no outgoing metadata in context")
-	}
+	require.True(t, ok, "no outgoing metadata in context")
 
 	chainValues := md.Get(HeaderCallChain)
-	if len(chainValues) == 0 {
-		t.Fatal("call-chain metadata missing")
-	}
+	require.NotEmpty(t, chainValues, "call-chain metadata missing")
 	chain, err := DeserializeCallChain(chainValues[0])
-	if err != nil {
-		t.Fatalf("DeserializeCallChain error: %v", err)
-	}
+	require.NoError(t, err, "DeserializeCallChain error")
 	// Should have the existing caller plus the new one.
-	if len(chain.Callers) != 2 {
-		t.Fatalf("chain.Callers has %d entries, want 2", len(chain.Callers))
-	}
-	if chain.Callers[0].ServiceName != "gateway" {
-		t.Errorf("chain.Callers[0].ServiceName = %q, want %q", chain.Callers[0].ServiceName, "gateway")
-	}
-	if chain.Callers[1].ServiceName != "downstream-service" {
-		t.Errorf("chain.Callers[1].ServiceName = %q, want %q", chain.Callers[1].ServiceName, "downstream-service")
-	}
+	require.Len(t, chain.Callers, 2)
+	assert.Equal(t, "gateway", chain.Callers[0].ServiceName)
+	assert.Equal(t, "downstream-service", chain.Callers[1].ServiceName)
 }
 
 func TestUnaryClientInterceptor_PreservesExistingMetadata(t *testing.T) {
+	t.Parallel()
 	interceptor := UnaryClientInterceptor("client-service")
 
 	identity := NewBasicIdentity("user-1", IdentityTypeUser, nil)
@@ -458,26 +386,20 @@ func TestUnaryClientInterceptor_PreservesExistingMetadata(t *testing.T) {
 	}
 
 	err := interceptor(ctx, "/test.Service/Method", "req", "reply", nil, invoker)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	md, ok := metadata.FromOutgoingContext(capturedCtx)
-	if !ok {
-		t.Fatal("no outgoing metadata in context")
-	}
+	require.True(t, ok, "no outgoing metadata in context")
 
 	// Custom header should still be present.
 	custom := md.Get("x-custom-header")
-	if len(custom) == 0 || custom[0] != "custom-value" {
-		t.Errorf("custom header = %v, want [\"custom-value\"]", custom)
-	}
+	require.NotEmpty(t, custom)
+	assert.Equal(t, "custom-value", custom[0])
 
 	// Identity headers should also be present.
 	idValues := md.Get(HeaderIdentityID)
-	if len(idValues) == 0 || idValues[0] != "user-1" {
-		t.Errorf("identity-id = %v, want [\"user-1\"]", idValues)
-	}
+	require.NotEmpty(t, idValues)
+	assert.Equal(t, "user-1", idValues[0])
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +412,7 @@ type mockClientStream struct {
 }
 
 func TestStreamClientInterceptor_PropagatesIdentity(t *testing.T) {
+	t.Parallel()
 	interceptor := StreamClientInterceptor("stream-service")
 
 	identity := NewBasicIdentity("user-42", IdentityTypeUser, nil)
@@ -502,22 +425,18 @@ func TestStreamClientInterceptor_PropagatesIdentity(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, &grpc.StreamDesc{}, nil, "/test.Service/Stream", streamer)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	md, ok := metadata.FromOutgoingContext(capturedCtx)
-	if !ok {
-		t.Fatal("no outgoing metadata in context")
-	}
+	require.True(t, ok, "no outgoing metadata in context")
 
 	idValues := md.Get(HeaderIdentityID)
-	if len(idValues) == 0 || idValues[0] != "user-42" {
-		t.Errorf("metadata identity-id = %v, want [\"user-42\"]", idValues)
-	}
+	require.NotEmpty(t, idValues)
+	assert.Equal(t, "user-42", idValues[0])
 }
 
 func TestStreamClientInterceptor_NoIdentity(t *testing.T) {
+	t.Parallel()
 	interceptor := StreamClientInterceptor("stream-service")
 
 	ctx := context.Background()
@@ -529,14 +448,10 @@ func TestStreamClientInterceptor_NoIdentity(t *testing.T) {
 	}
 
 	_, err := interceptor(ctx, &grpc.StreamDesc{}, nil, "/test.Service/Stream", streamer)
-	if err != nil {
-		t.Fatalf("interceptor returned error: %v", err)
-	}
+	require.NoError(t, err, "interceptor returned error")
 
 	_, ok := metadata.FromOutgoingContext(capturedCtx)
-	if ok {
-		t.Error("outgoing metadata should not be set when no identity is present")
-	}
+	assert.False(t, ok, "outgoing metadata should not be set when no identity is present")
 }
 
 // ---------------------------------------------------------------------------
@@ -544,13 +459,12 @@ func TestStreamClientInterceptor_NoIdentity(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWrappedServerStream_OverridesContext(t *testing.T) {
+	t.Parallel()
 	originalCtx := context.Background()
 	enrichedCtx := context.WithValue(originalCtx, identityKey, newTestIdentity())
 
 	stream := &mockServerStream{ctx: originalCtx}
 	wrapped := &wrappedServerStream{ServerStream: stream, ctx: enrichedCtx}
 
-	if wrapped.Context() != enrichedCtx {
-		t.Error("wrappedServerStream.Context() did not return the enriched context")
-	}
+	assert.Equal(t, enrichedCtx, wrapped.Context(), "wrappedServerStream.Context() did not return the enriched context")
 }

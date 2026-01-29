@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -13,6 +16,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestHTTPMiddleware_ValidToken(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -29,20 +33,15 @@ func TestHTTPMiddleware_ValidToken(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status code = %d, want %d", rr.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
 
 	identity, ok := IdentityFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("identity not found in context after middleware")
-	}
-	if identity.ID() != "user-42" {
-		t.Errorf("identity.ID() = %q, want %q", identity.ID(), "user-42")
-	}
+	require.True(t, ok, "identity not found in context after middleware")
+	assert.Equal(t, "user-42", identity.ID())
 }
 
 func TestHTTPMiddleware_MissingAuthHeader(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -56,12 +55,11 @@ func TestHTTPMiddleware_MissingAuthHeader(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status code = %d, want %d", rr.Code, http.StatusUnauthorized)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
 func TestHTTPMiddleware_InvalidToken(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{err: errors.New("token expired")}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -76,12 +74,11 @@ func TestHTTPMiddleware_InvalidToken(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status code = %d, want %d", rr.Code, http.StatusUnauthorized)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
 func TestHTTPMiddleware_NonBearerAuth(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -96,12 +93,11 @@ func TestHTTPMiddleware_NonBearerAuth(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("status code = %d, want %d", rr.Code, http.StatusUnauthorized)
-	}
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
 func TestHTTPMiddleware_WithCallerServiceHeader(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -119,20 +115,15 @@ func TestHTTPMiddleware_WithCallerServiceHeader(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status code = %d, want %d", rr.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
 
 	caller, ok := CallerServiceFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("caller service not found in context")
-	}
-	if caller != "upstream-gateway" {
-		t.Errorf("caller = %q, want %q", caller, "upstream-gateway")
-	}
+	require.True(t, ok, "caller service not found in context")
+	assert.Equal(t, "upstream-gateway", caller)
 }
 
 func TestHTTPMiddleware_WithCallChainHeader(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -144,9 +135,7 @@ func TestHTTPMiddleware_WithCallChainHeader(t *testing.T) {
 		},
 	}
 	encodedChain, err := SerializeCallChain(chain)
-	if err != nil {
-		t.Fatalf("SerializeCallChain error: %v", err)
-	}
+	require.NoError(t, err, "SerializeCallChain error")
 
 	var capturedCtx context.Context
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -162,23 +151,16 @@ func TestHTTPMiddleware_WithCallChainHeader(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("status code = %d, want %d", rr.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code)
 
 	gotChain, ok := CallChainFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("call chain not found in context")
-	}
-	if gotChain.OriginalID != "user-42" {
-		t.Errorf("chain.OriginalID = %q, want %q", gotChain.OriginalID, "user-42")
-	}
-	if len(gotChain.Callers) != 1 {
-		t.Fatalf("chain.Callers has %d entries, want 1", len(gotChain.Callers))
-	}
+	require.True(t, ok, "call chain not found in context")
+	assert.Equal(t, "user-42", gotChain.OriginalID)
+	require.Len(t, gotChain.Callers, 1)
 }
 
 func TestHTTPMiddleware_MalformedCallChain_DoesNotFail(t *testing.T) {
+	t.Parallel()
 	validator := &mockValidator{identity: newTestIdentity()}
 	middleware := HTTPMiddleware(validator, "test-service")
 
@@ -197,24 +179,16 @@ func TestHTTPMiddleware_MalformedCallChain_DoesNotFail(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	// Malformed call chain should not cause a 401 — the identity was validated.
-	if rr.Code != http.StatusOK {
-		t.Errorf("status code = %d, want %d (malformed chain should not block request)", rr.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, rr.Code, "malformed chain should not block request")
 
 	// Identity should still be present.
 	identity, ok := IdentityFromContext(capturedCtx)
-	if !ok {
-		t.Fatal("identity not found in context")
-	}
-	if identity.ID() != "user-42" {
-		t.Errorf("identity.ID() = %q, want %q", identity.ID(), "user-42")
-	}
+	require.True(t, ok, "identity not found in context")
+	assert.Equal(t, "user-42", identity.ID())
 
 	// Call chain should not be present since deserialization failed.
 	_, chainOk := CallChainFromContext(capturedCtx)
-	if chainOk {
-		t.Error("call chain should not be in context when deserialization fails")
-	}
+	assert.False(t, chainOk, "call chain should not be in context when deserialization fails")
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +211,7 @@ func (m *mockRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestPropagatingRoundTripper_WithIdentity(t *testing.T) {
+	t.Parallel()
 	mock := &mockRoundTripper{
 		response: &http.Response{StatusCode: http.StatusOK},
 	}
@@ -248,59 +223,34 @@ func TestPropagatingRoundTripper_WithIdentity(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://downstream/api/data", nil)
 
 	resp, err := rt.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-	}
+	require.NoError(t, err, "RoundTrip error")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Verify identity headers were set on the outgoing request.
 	captured := mock.capturedReq
-	if captured.Header.Get(HeaderIdentityID) != "user-42" {
-		t.Errorf("HeaderIdentityID = %q, want %q", captured.Header.Get(HeaderIdentityID), "user-42")
-	}
-	if captured.Header.Get(HeaderIdentityType) != "user" {
-		t.Errorf("HeaderIdentityType = %q, want %q", captured.Header.Get(HeaderIdentityType), "user")
-	}
-	if captured.Header.Get(HeaderCallerService) != "my-service" {
-		t.Errorf("HeaderCallerService = %q, want %q", captured.Header.Get(HeaderCallerService), "my-service")
-	}
+	assert.Equal(t, "user-42", captured.Header.Get(HeaderIdentityID))
+	assert.Equal(t, "user", captured.Header.Get(HeaderIdentityType))
+	assert.Equal(t, "my-service", captured.Header.Get(HeaderCallerService))
 
 	// Verify claims were propagated.
 	claimsHeader := captured.Header.Get(HeaderIdentityClaims)
-	if claimsHeader == "" {
-		t.Fatal("HeaderIdentityClaims is empty, expected encoded claims")
-	}
+	require.NotEmpty(t, claimsHeader, "HeaderIdentityClaims is empty, expected encoded claims")
 	claims, err := DeserializeClaims(claimsHeader)
-	if err != nil {
-		t.Fatalf("DeserializeClaims error: %v", err)
-	}
-	if claims["role"] != "admin" {
-		t.Errorf("claims[role] = %v, want %q", claims["role"], "admin")
-	}
+	require.NoError(t, err, "DeserializeClaims error")
+	assert.Equal(t, "admin", claims["role"])
 
 	// Verify call chain was created.
 	chainHeader := captured.Header.Get(HeaderCallChain)
-	if chainHeader == "" {
-		t.Fatal("HeaderCallChain is empty")
-	}
+	require.NotEmpty(t, chainHeader, "HeaderCallChain is empty")
 	chain, err := DeserializeCallChain(chainHeader)
-	if err != nil {
-		t.Fatalf("DeserializeCallChain error: %v", err)
-	}
-	if chain.OriginalID != "user-42" {
-		t.Errorf("chain.OriginalID = %q, want %q", chain.OriginalID, "user-42")
-	}
-	if len(chain.Callers) != 1 {
-		t.Fatalf("chain.Callers has %d entries, want 1", len(chain.Callers))
-	}
-	if chain.Callers[0].ServiceName != "my-service" {
-		t.Errorf("chain.Callers[0].ServiceName = %q, want %q", chain.Callers[0].ServiceName, "my-service")
-	}
+	require.NoError(t, err, "DeserializeCallChain error")
+	assert.Equal(t, "user-42", chain.OriginalID)
+	require.Len(t, chain.Callers, 1)
+	assert.Equal(t, "my-service", chain.Callers[0].ServiceName)
 }
 
 func TestPropagatingRoundTripper_NoIdentity(t *testing.T) {
+	t.Parallel()
 	mock := &mockRoundTripper{
 		response: &http.Response{StatusCode: http.StatusOK},
 	}
@@ -311,21 +261,16 @@ func TestPropagatingRoundTripper_NoIdentity(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://downstream/api/data", nil)
 
 	resp, err := rt.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
-	}
+	require.NoError(t, err, "RoundTrip error")
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// No identity headers should have been added.
 	captured := mock.capturedReq
-	if captured.Header.Get(HeaderIdentityID) != "" {
-		t.Errorf("HeaderIdentityID should be empty when no identity is present, got %q", captured.Header.Get(HeaderIdentityID))
-	}
+	assert.Empty(t, captured.Header.Get(HeaderIdentityID), "HeaderIdentityID should be empty when no identity is present")
 }
 
 func TestPropagatingRoundTripper_ExistingCallChain(t *testing.T) {
+	t.Parallel()
 	mock := &mockRoundTripper{
 		response: &http.Response{StatusCode: http.StatusOK},
 	}
@@ -345,32 +290,21 @@ func TestPropagatingRoundTripper_ExistingCallChain(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://downstream/api/data", nil)
 
 	_, err := rt.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
+	require.NoError(t, err, "RoundTrip error")
 
 	captured := mock.capturedReq
 	chainHeader := captured.Header.Get(HeaderCallChain)
-	if chainHeader == "" {
-		t.Fatal("HeaderCallChain is empty")
-	}
+	require.NotEmpty(t, chainHeader, "HeaderCallChain is empty")
 	chain, err := DeserializeCallChain(chainHeader)
-	if err != nil {
-		t.Fatalf("DeserializeCallChain error: %v", err)
-	}
+	require.NoError(t, err, "DeserializeCallChain error")
 	// Should have the existing caller plus the new one.
-	if len(chain.Callers) != 2 {
-		t.Fatalf("chain.Callers has %d entries, want 2", len(chain.Callers))
-	}
-	if chain.Callers[0].ServiceName != "gateway" {
-		t.Errorf("chain.Callers[0].ServiceName = %q, want %q", chain.Callers[0].ServiceName, "gateway")
-	}
-	if chain.Callers[1].ServiceName != "downstream-service" {
-		t.Errorf("chain.Callers[1].ServiceName = %q, want %q", chain.Callers[1].ServiceName, "downstream-service")
-	}
+	require.Len(t, chain.Callers, 2)
+	assert.Equal(t, "gateway", chain.Callers[0].ServiceName)
+	assert.Equal(t, "downstream-service", chain.Callers[1].ServiceName)
 }
 
 func TestPropagatingRoundTripper_DoesNotMutateOriginalRequest(t *testing.T) {
+	t.Parallel()
 	mock := &mockRoundTripper{
 		response: &http.Response{StatusCode: http.StatusOK},
 	}
@@ -383,32 +317,24 @@ func TestPropagatingRoundTripper_DoesNotMutateOriginalRequest(t *testing.T) {
 	req.Header.Set("X-Original", "preserved")
 
 	_, err := rt.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
+	require.NoError(t, err, "RoundTrip error")
 
 	// Original request should not have identity headers.
-	if req.Header.Get(HeaderIdentityID) != "" {
-		t.Error("original request was mutated with identity headers")
-	}
+	assert.Empty(t, req.Header.Get(HeaderIdentityID), "original request was mutated with identity headers")
 	// Original custom header should still be present.
-	if req.Header.Get("X-Original") != "preserved" {
-		t.Error("original request lost its custom headers")
-	}
+	assert.Equal(t, "preserved", req.Header.Get("X-Original"), "original request lost its custom headers")
 }
 
 func TestPropagatingRoundTripper_NilTransport(t *testing.T) {
+	t.Parallel()
 	// Passing nil transport should use http.DefaultTransport.
 	rt := NewPropagatingRoundTripper("my-service", nil)
-	if rt.wrapped == nil {
-		t.Fatal("wrapped transport is nil, expected http.DefaultTransport")
-	}
-	if rt.wrapped != http.DefaultTransport {
-		t.Error("wrapped transport is not http.DefaultTransport")
-	}
+	require.NotNil(t, rt.wrapped, "wrapped transport is nil, expected http.DefaultTransport")
+	assert.Equal(t, http.DefaultTransport, rt.wrapped, "wrapped transport is not http.DefaultTransport")
 }
 
 func TestPropagatingRoundTripper_PreservesExistingHeaders(t *testing.T) {
+	t.Parallel()
 	mock := &mockRoundTripper{
 		response: &http.Response{StatusCode: http.StatusOK},
 	}
@@ -422,19 +348,11 @@ func TestPropagatingRoundTripper_PreservesExistingHeaders(t *testing.T) {
 	req.Header.Set("Accept", "application/json")
 
 	_, err := rt.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
+	require.NoError(t, err, "RoundTrip error")
 
 	captured := mock.capturedReq
-	if captured.Header.Get("X-Request-Id") != "req-123" {
-		t.Errorf("X-Request-Id = %q, want %q", captured.Header.Get("X-Request-Id"), "req-123")
-	}
-	if captured.Header.Get("Accept") != "application/json" {
-		t.Errorf("Accept = %q, want %q", captured.Header.Get("Accept"), "application/json")
-	}
+	assert.Equal(t, "req-123", captured.Header.Get("X-Request-Id"))
+	assert.Equal(t, "application/json", captured.Header.Get("Accept"))
 	// Identity headers should also be present.
-	if captured.Header.Get(HeaderIdentityID) != "user-1" {
-		t.Errorf("HeaderIdentityID = %q, want %q", captured.Header.Get(HeaderIdentityID), "user-1")
-	}
+	assert.Equal(t, "user-1", captured.Header.Get(HeaderIdentityID))
 }

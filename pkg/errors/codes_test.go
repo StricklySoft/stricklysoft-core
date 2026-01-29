@@ -2,9 +2,13 @@ package errors
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCode_String(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		code Code
@@ -59,14 +63,14 @@ func TestCode_String(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.code.String(); got != tt.want {
-				t.Errorf("Code.String() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.code.String())
 		})
 	}
 }
 
 func TestCode_Category(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		code Code
@@ -166,14 +170,14 @@ func TestCode_Category(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.code.Category(); got != tt.want {
-				t.Errorf("Code.Category() = %v, want %v", got, tt.want)
-			}
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.code.Category())
 		})
 	}
 }
 
 func TestAllCodesHaveValidFormat(t *testing.T) {
+	t.Parallel()
 	// Verify all defined codes follow the CATEGORY_XXX format
 	codes := []Code{
 		CodeValidation, CodeValidationRequired, CodeValidationFormat, CodeValidationRange,
@@ -186,26 +190,22 @@ func TestAllCodesHaveValidFormat(t *testing.T) {
 		CodeTimeout, CodeTimeoutDatabase, CodeTimeoutDependency,
 	}
 
+	// Verify category is a known category
+	validCategories := map[string]bool{
+		"VAL": true, "AUTH": true, "AUTHZ": true, "NF": true,
+		"CONF": true, "INT": true, "UNAVAIL": true, "TIMEOUT": true,
+	}
+
 	for _, code := range codes {
 		t.Run(string(code), func(t *testing.T) {
+			t.Parallel()
 			s := code.String()
-			if s == "" {
-				t.Error("Code.String() returned empty string")
-			}
+			require.NotEmpty(t, s, "Code.String() returned empty string")
 
 			cat := code.Category()
-			if cat == "" {
-				t.Error("Code.Category() returned empty string")
-			}
+			require.NotEmpty(t, cat, "Code.Category() returned empty string")
 
-			// Verify category is a known category
-			validCategories := map[string]bool{
-				"VAL": true, "AUTH": true, "AUTHZ": true, "NF": true,
-				"CONF": true, "INT": true, "UNAVAIL": true, "TIMEOUT": true,
-			}
-			if !validCategories[cat] {
-				t.Errorf("Code.Category() = %v, not a valid category", cat)
-			}
+			assert.True(t, validCategories[cat], "Code.Category() = %v, not a valid category", cat)
 		})
 	}
 }
