@@ -82,6 +82,30 @@ func (c *validatableStdlibConfig) Validate() error {
 	return nil
 }
 
+// requiredValidatableConfig implements both required:"true" tags AND the
+// Validator interface. Used to prove that Validate() is NOT called when
+// required tag validation fails first.
+type requiredValidatableConfig struct {
+	Name          string `env:"NAME" required:"true"`
+	validateCalls *int   // tracks whether Validate() was invoked
+}
+
+func (c *requiredValidatableConfig) Validate() error {
+	if c.validateCalls != nil {
+		*c.validateCalls++
+	}
+	return nil
+}
+
+// namedSlice is a named slice type to verify that setField handles
+// named slice types without panicking (uses reflect.MakeSlice instead
+// of reflect.ValueOf).
+type namedSlice []string
+
+type namedSliceConfig struct {
+	Tags namedSlice `env:"TAGS" envDefault:"a,b,c"`
+}
+
 type nestedRequiredConfig struct {
 	App      string               `env:"APP"`
 	Database nestedRequiredDBConf `env:"DB"`
@@ -498,7 +522,6 @@ func TestLoader_Load_Types(t *testing.T) {
 		name    string
 		envKey  string
 		envVal  string
-		check   func(t *testing.T)
 		loadCfg func(t *testing.T) error
 	}{
 		{
@@ -849,27 +872,32 @@ func TestLoader_Load_Validator_StdlibError(t *testing.T) {
 }
 
 // TestLoader_Load_Validator_NotCalledOnRequiredFailure verifies that
-// the Validator interface is NOT called when required tag validation fails.
+// the Validator interface is NOT called when required tag validation
+// fails. This test uses a struct that implements BOTH required:"true"
+// AND the Validator interface, then leaves the required field empty
+// and asserts that Validate() was never invoked.
 func TestLoader_Load_Validator_NotCalledOnRequiredFailure(t *testing.T) {
-	// Verify that the error code is CodeValidationRequired (not
-	// CodeValidation from a Validator). The requiredConfig type does
-	// not implement Validator, so if the code is CodeValidationRequired
-	// we know the required tag check ran and returned before any
-	// Validator could be called.
-	var c requiredConfig
-	err := New().Load(&c)
+	calls := 0
+	cfg := requiredValidatableConfig{validateCalls: &calls}
+
+	err := New().Load(&cfg)
 	if err == nil {
-		t.Fatal("Load() expected error, got nil")
+		t.Fatal("Load() expected error for missing required field, got nil")
 	}
+
+	// The error must come from required tag validation, not from Validator.
 	var ssErr *sserr.Error
 	if !errors.As(err, &ssErr) {
 		t.Fatalf("error type = %T, want *sserr.Error", err)
 	}
-	// The error should be from the required tag check, not from a
-	// Validator (requiredConfig doesn't implement Validator).
 	if ssErr.Code != sserr.CodeValidationRequired {
 		t.Errorf("error code = %q, want %q (required should fail before Validator)",
 			ssErr.Code, sserr.CodeValidationRequired)
+	}
+
+	// The critical assertion: Validate() must not have been called.
+	if calls != 0 {
+		t.Errorf("Validate() called %d time(s), want 0 (should not run when required fails)", calls)
 	}
 }
 
@@ -1057,5 +1085,109 @@ func TestLoader_Load_InvalidJSON_File(t *testing.T) {
 	}
 	if !sserr.IsInternal(err) {
 		t.Errorf("IsInternal() = false, want true for JSON parse error")
+	}
+}
+
+// ===========================================================================
+// Load — Named Slice Type Tests
+// ===========================================================================
+
+// TestLoader_Load_NamedSlice_FromDefault verifies that named slice types
+// (e.g., type Tags []string) are correctly populated from envDefault
+// tags without panicking.
+func TestLoader_Load_NamedSlice_FromDefault(t *testing.T) {
+	var cfg namedSliceConfig
+	if err := New().Load(&cfg); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.Tags) != 3 {
+		t.Fatalf("Tags length = %d, want 3", len(cfg.Tags))
+	}
+	expected := []string{"a", "b", "c"}
+	for i, want := range expected {
+		if cfg.Tags[i] != want {
+			t.Errorf("Tags[%d] = %q, want %q", i, cfg.Tags[i], want)
+		}
+	}
+}
+
+// TestLoader_Load_NamedSlice_FromEnv verifies that named slice types
+// are correctly populated from environment variables.
+func TestLoader_Load_NamedSlice_FromEnv(t *testing.T) {
+	t.Setenv("TAGS", "x, y, z")
+
+	var cfg namedSliceConfig
+	if err := New().Load(&cfg); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.Tags) != 3 {
+		t.Fatalf("Tags length = %d, want 3", len(cfg.Tags))
+	}
+	expected := []string{"x", "y", "z"}
+	for i, want := range expected {
+		if cfg.Tags[i] != want {
+			t.Errorf("Tags[%d] = %q, want %q", i, cfg.Tags[i], want)
+		}
+	}
+}
+
+// ===========================================================================
+// Benchmark — NFR-1: Load time < 50ms
+// ===========================================================================
+
+// BenchmarkLoad measures the time to load a realistic configuration struct
+// with defaults, a YAML file, and environment variable overrides. NFR-1
+// requires Load time < 50ms; this benchmark verifies the constraint.
+func BenchmarkLoad(b *testing.B) {
+	// Create a temp YAML file once for the entire benchmark.
+	dir := b.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	yamlContent := []byte("host: bench-host\nport: 3000\ndebug: true\ntimeout: 5s\n")
+	if err := os.WriteFile(path, yamlContent, 0o600); err != nil {
+		b.Fatalf("writeFile error: %v", err)
+	}
+
+	// Set env vars that override file values.
+	b.Setenv("HOST", "env-host")
+	b.Setenv("PORT", "9090")
+
+	loader := New().WithFile(path)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var cfg basicConfig
+		if err := loader.Load(&cfg); err != nil {
+			b.Fatalf("Load() error: %v", err)
+		}
+	}
+}
+
+// TestBenchmarkLoad_Under50ms runs a single Load with file + env vars
+// and asserts it completes under 50ms, satisfying NFR-1.
+func TestBenchmarkLoad_Under50ms(t *testing.T) {
+	path := writeTestFile(t, "config.yaml", `
+host: bench-host
+port: 3000
+debug: true
+timeout: 5s
+`)
+
+	t.Setenv("HOST", "env-host")
+	t.Setenv("PORT", "9090")
+
+	loader := New().WithFile(path)
+
+	start := time.Now()
+	var cfg basicConfig
+	if err := loader.Load(&cfg); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	const maxLoadTime = 50 * time.Millisecond
+	if elapsed > maxLoadTime {
+		t.Errorf("Load() took %v, want < %v (NFR-1)", elapsed, maxLoadTime)
 	}
 }
