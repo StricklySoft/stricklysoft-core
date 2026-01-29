@@ -178,7 +178,7 @@ All three are validated during `Build()`. Empty values produce a
 Hooks are functions with the signature:
 
 ```go
-type LifecycleHook func(ctx context.Context) error
+type Hook func(ctx context.Context) error
 ```
 
 They execute at specific points in the lifecycle:

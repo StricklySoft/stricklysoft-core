@@ -24,11 +24,12 @@ func mustBuildAgent(t *testing.T, id, name, version string) *BaseAgent {
 	return agent
 }
 
-// mustStartAgent is a test helper that builds an agent and starts it,
-// failing the test if either operation returns an error.
-func mustStartAgent(t *testing.T, id, name, version string) *BaseAgent {
+// mustStartAgent is a test helper that builds an agent with default test
+// identity values and starts it, failing the test if either operation
+// returns an error.
+func mustStartAgent(t *testing.T) *BaseAgent {
 	t.Helper()
-	agent := mustBuildAgent(t, id, name, version)
+	agent := mustBuildAgent(t, "agent-001", "test-agent", "1.0.0")
 	if err := agent.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestBaseAgent_Info_NoStartedAtBeforeStart(t *testing.T) {
 // TestBaseAgent_Info_StartedAtAfterStart verifies that Info returns a
 // non-nil StartedAt and positive Uptime after the agent has been started.
 func TestBaseAgent_Info_StartedAtAfterStart(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	info := agent.Info()
 
 	if info.StartedAt == nil {
@@ -334,7 +335,7 @@ func TestBaseAgent_Info_StartedAtAfterStart(t *testing.T) {
 // TestBaseAgent_Info_UptimeResetAfterStop verifies that StartedAt is nil
 // and Uptime is zero after the agent has been stopped.
 func TestBaseAgent_Info_UptimeResetAfterStop(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 
 	if err := agent.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error: %v", err)
@@ -356,7 +357,7 @@ func TestBaseAgent_Info_UptimeResetAfterStop(t *testing.T) {
 // TestBaseAgent_Health_Running verifies that Health returns nil when the
 // agent is in StateRunning.
 func TestBaseAgent_Health_Running(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	if err := agent.Health(context.Background()); err != nil {
 		t.Errorf("Health() = %v when running, want nil", err)
 	}
@@ -384,7 +385,7 @@ func TestBaseAgent_Health_NotRunning(t *testing.T) {
 // TestBaseAgent_Health_Paused verifies that Health returns an error when
 // the agent is paused.
 func TestBaseAgent_Health_Paused(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	if err := agent.Pause(context.Background()); err != nil {
 		t.Fatalf("Pause() error: %v", err)
 	}
@@ -420,7 +421,7 @@ func TestBaseAgent_Start_Success(t *testing.T) {
 // timestamp.
 func TestBaseAgent_Start_SetsStartedAt(t *testing.T) {
 	before := time.Now().UTC()
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	after := time.Now().UTC()
 
 	info := agent.Info()
@@ -497,7 +498,7 @@ func TestBaseAgent_Start_HookError(t *testing.T) {
 // TestBaseAgent_Start_InvalidState verifies that Start from StateRunning
 // returns a conflict error.
 func TestBaseAgent_Start_InvalidState(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 
 	err := agent.Start(context.Background())
 	if err == nil {
@@ -531,7 +532,7 @@ func TestBaseAgent_Start_ContextCanceled(t *testing.T) {
 // TestBaseAgent_Start_FromStopped verifies that an agent can be restarted
 // after being stopped.
 func TestBaseAgent_Start_FromStopped(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	if err := agent.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error: %v", err)
 	}
@@ -578,7 +579,7 @@ func TestBaseAgent_Start_FromFailed(t *testing.T) {
 // TestBaseAgent_Stop_Success verifies that Stop transitions a running agent
 // to Stopped.
 func TestBaseAgent_Stop_Success(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 
 	if err := agent.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error: %v", err)
@@ -645,7 +646,7 @@ func TestBaseAgent_Stop_HookError(t *testing.T) {
 // TestBaseAgent_Stop_AlreadyStopped verifies that Stop is a no-op when
 // the agent is already stopped.
 func TestBaseAgent_Stop_AlreadyStopped(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	if err := agent.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error: %v", err)
 	}
@@ -678,7 +679,7 @@ func TestBaseAgent_Stop_InvalidState(t *testing.T) {
 // TestBaseAgent_Pause_Success verifies that Pause transitions a running
 // agent to Paused.
 func TestBaseAgent_Pause_Success(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 
 	if err := agent.Pause(context.Background()); err != nil {
 		t.Fatalf("Pause() error: %v", err)
@@ -717,7 +718,7 @@ func TestBaseAgent_Pause_WithHook(t *testing.T) {
 // TestBaseAgent_Pause_InvalidState verifies that Pause from Stopped returns
 // a conflict error.
 func TestBaseAgent_Pause_InvalidState(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	if err := agent.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error: %v", err)
 	}
@@ -763,7 +764,7 @@ func TestBaseAgent_Pause_HookError(t *testing.T) {
 // TestBaseAgent_Resume_Success verifies that Resume transitions a paused
 // agent back to Running.
 func TestBaseAgent_Resume_Success(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 	if err := agent.Pause(context.Background()); err != nil {
 		t.Fatalf("Pause() error: %v", err)
 	}
@@ -808,7 +809,7 @@ func TestBaseAgent_Resume_WithHook(t *testing.T) {
 // TestBaseAgent_Resume_InvalidState verifies that Resume from Running
 // returns a conflict error.
 func TestBaseAgent_Resume_InvalidState(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 
 	err := agent.Resume(context.Background())
 	if err == nil {
@@ -981,7 +982,7 @@ func TestBaseAgent_ConcurrentStartStop(t *testing.T) {
 // TestBaseAgent_ConcurrentInfo verifies that concurrent Info() calls do
 // not race with lifecycle operations.
 func TestBaseAgent_ConcurrentInfo(t *testing.T) {
-	agent := mustStartAgent(t, "agent-001", "test-agent", "1.0.0")
+	agent := mustStartAgent(t)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {

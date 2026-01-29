@@ -31,8 +31,8 @@ const tracerName = "github.com/StricklySoft/stricklysoft-core/pkg/lifecycle"
 // and triggering alerts on failure transitions.
 type StateChangeHandler func(old, new State)
 
-// LifecycleHook is a function called during a lifecycle transition (start,
-// stop, pause, resume). It receives the caller's context, which may carry
+// Hook is a function called during a lifecycle transition (start, stop,
+// pause, resume). It receives the caller's context, which may carry
 // deadlines, cancellation signals, and identity information.
 //
 // If a hook returns a non-nil error, the lifecycle transition is aborted
@@ -42,7 +42,7 @@ type StateChangeHandler func(old, new State)
 // Hooks execute outside the agent's state mutex, so they may safely call
 // read-only methods ([BaseAgent.State], [BaseAgent.Info]) on the agent
 // without causing deadlocks.
-type LifecycleHook func(ctx context.Context) error
+type Hook func(ctx context.Context) error
 
 // Agent defines the lifecycle contract for all agents on the StricklySoft
 // Cloud Platform. Every agent — regardless of its specific functionality —
@@ -232,10 +232,10 @@ type BaseAgent struct {
 	logger *slog.Logger
 
 	// Lifecycle hooks — set at construction via builder, never modified.
-	onStart  LifecycleHook
-	onStop   LifecycleHook
-	onPause  LifecycleHook
-	onResume LifecycleHook
+	onStart  Hook
+	onStop   Hook
+	onPause  Hook
+	onResume Hook
 
 	// State change observers — set at construction via builder, never modified.
 	stateHandlers []StateChangeHandler
@@ -711,10 +711,10 @@ type BaseAgentBuilder struct {
 	version       string
 	capabilities  []Capability
 	logger        *slog.Logger
-	onStart       LifecycleHook
-	onStop        LifecycleHook
-	onPause       LifecycleHook
-	onResume      LifecycleHook
+	onStart       Hook
+	onStop        Hook
+	onPause       Hook
+	onResume      Hook
 	stateHandlers []StateChangeHandler
 }
 
@@ -760,7 +760,7 @@ func (b *BaseAgentBuilder) WithLogger(logger *slog.Logger) *BaseAgentBuilder {
 // to [StateRunning]. Use this to perform agent-specific initialization
 // (e.g., verifying database connectivity, loading models, subscribing to
 // message queues).
-func (b *BaseAgentBuilder) WithOnStart(hook LifecycleHook) *BaseAgentBuilder {
+func (b *BaseAgentBuilder) WithOnStart(hook Hook) *BaseAgentBuilder {
 	b.onStart = hook
 	return b
 }
@@ -770,7 +770,7 @@ func (b *BaseAgentBuilder) WithOnStart(hook LifecycleHook) *BaseAgentBuilder {
 // to [StateStopped]. Use this to perform agent-specific cleanup (e.g.,
 // closing database connections, flushing buffers, unsubscribing from
 // message queues).
-func (b *BaseAgentBuilder) WithOnStop(hook LifecycleHook) *BaseAgentBuilder {
+func (b *BaseAgentBuilder) WithOnStop(hook Hook) *BaseAgentBuilder {
 	b.onStop = hook
 	return b
 }
@@ -779,7 +779,7 @@ func (b *BaseAgentBuilder) WithOnStop(hook LifecycleHook) *BaseAgentBuilder {
 // after the agent transitions to [StatePaused]. Use this to suspend
 // background workers or release non-essential resources while the agent
 // is paused.
-func (b *BaseAgentBuilder) WithOnPause(hook LifecycleHook) *BaseAgentBuilder {
+func (b *BaseAgentBuilder) WithOnPause(hook Hook) *BaseAgentBuilder {
 	b.onPause = hook
 	return b
 }
@@ -788,7 +788,7 @@ func (b *BaseAgentBuilder) WithOnPause(hook LifecycleHook) *BaseAgentBuilder {
 // after the agent transitions back to [StateRunning]. Use this to restart
 // background workers or reacquire resources that were released during
 // pause.
-func (b *BaseAgentBuilder) WithOnResume(hook LifecycleHook) *BaseAgentBuilder {
+func (b *BaseAgentBuilder) WithOnResume(hook Hook) *BaseAgentBuilder {
 	b.onResume = hook
 	return b
 }
