@@ -367,7 +367,15 @@ func setField(field reflect.Value, value string) error {
 			for i := range parts {
 				parts[i] = strings.TrimSpace(parts[i])
 			}
-			field.Set(reflect.ValueOf(parts))
+			// Use reflect.MakeSlice with the field's actual type to
+			// support named slice types (e.g., type Tags []string).
+			// reflect.ValueOf(parts) would produce a []string value
+			// that panics on Set if the field type differs.
+			slice := reflect.MakeSlice(field.Type(), len(parts), len(parts))
+			for i, p := range parts {
+				slice.Index(i).SetString(p)
+			}
+			field.Set(slice)
 		} else {
 			return fmt.Errorf("unsupported slice element type %s", field.Type().Elem().Kind())
 		}
