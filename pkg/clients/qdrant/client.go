@@ -50,6 +50,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	sserr "github.com/StricklySoft/stricklysoft-core/pkg/errors"
 )
@@ -512,7 +514,14 @@ func wrapError(err error, message string) *sserr.Error {
 	if err == nil {
 		return nil
 	}
+	// Check both standard context.DeadlineExceeded and gRPC's
+	// DeadlineExceeded status code, because the gRPC transport layer
+	// may wrap the deadline error in a status.Status rather than
+	// propagating the raw context error.
 	if errors.Is(err, context.DeadlineExceeded) {
+		return sserr.Wrap(err, sserr.CodeTimeoutDatabase, message)
+	}
+	if st, ok := grpcstatus.FromError(err); ok && st.Code() == grpccodes.DeadlineExceeded {
 		return sserr.Wrap(err, sserr.CodeTimeoutDatabase, message)
 	}
 	return sserr.Wrap(err, sserr.CodeInternalDatabase, message)
