@@ -12,7 +12,7 @@ require (
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.3
 	github.com/pashagolub/pgxmock/v4 v4.3.0
 	github.com/qdrant/go-client v1.15.2
-	github.com/redis/go-redis/v9 v9.7.0
+	github.com/redis/go-redis/v9 v9.7.3
 	github.com/stretchr/testify v1.9.0
 	github.com/testcontainers/testcontainers-go/modules/minio v0.34.0
 	github.com/testcontainers/testcontainers-go/modules/neo4j v0.34.0
