@@ -393,8 +393,10 @@ func StartNeo4j(ctx context.Context) (*Neo4jResult, error) {
 // ===========================================================================
 
 // DefaultQdrantImage is the container image used for Qdrant integration
-// tests. Uses the official Qdrant vector database image.
-const DefaultQdrantImage = "docker.io/qdrant/qdrant:latest"
+// tests. Pinned to v1.12 for compatibility with go-client v1.15.x; the
+// client's version parser panics when the server major version exceeds
+// the client's by more than one.
+const DefaultQdrantImage = "docker.io/qdrant/qdrant:v1.12.6"
 
 // QdrantResult holds a started Qdrant container and the connection
 // details needed to connect to it. The caller is responsible for

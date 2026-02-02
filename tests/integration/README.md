@@ -217,7 +217,7 @@ cfg := qdrant.Config{
 
 | Setting | Value                 |
 |---------|-----------------------|
-| Image   | `qdrant/qdrant:latest`|
+| Image   | `qdrant/qdrant:v1.12.6`|
 | Auth    | None (no API key)     |
 
 The returned `QdrantResult` contains:
@@ -403,7 +403,7 @@ docker pull postgres:16-alpine
 docker pull redis:7-alpine
 docker pull minio/minio:latest
 docker pull neo4j:5-community
-docker pull qdrant/qdrant:latest
+docker pull qdrant/qdrant:v1.12.6
 ```
 
 ### Container cleanup
