@@ -172,17 +172,6 @@ func newIntCmd(val int64, err error) *redis.IntCmd {
 	return cmd
 }
 
-// newBoolCmd creates a *redis.BoolCmd with the given value or error.
-func newBoolCmd(val bool, err error) *redis.BoolCmd {
-	cmd := redis.NewBoolCmd(context.Background())
-	if err != nil {
-		cmd.SetErr(err)
-	} else {
-		cmd.SetVal(val)
-	}
-	return cmd
-}
-
 // newDurationCmd creates a *redis.DurationCmd with the given value or error.
 func newDurationCmd(val time.Duration, err error) *redis.DurationCmd {
 	cmd := redis.NewDurationCmd(context.Background(), time.Second)

@@ -214,7 +214,7 @@ func (s *MinIOIntegrationSuite) TestPutObject_And_GetObject() {
 
 	obj, err := s.client.GetObject(s.ctx, bucket, "test-key.txt", miniogo.GetObjectOptions{})
 	require.NoError(s.T(), err, "GetObject should succeed")
-	defer obj.Close()
+	defer func() { _ = obj.Close() }()
 
 	data, err := io.ReadAll(obj)
 	require.NoError(s.T(), err, "reading object should succeed")
@@ -410,7 +410,7 @@ func (s *MinIOIntegrationSuite) TestGetObject_NonExistentKey() {
 		// Some MinIO versions fail immediately.
 		return
 	}
-	defer obj.Close()
+	defer func() { _ = obj.Close() }()
 
 	// The error surfaces when we try to read from the object.
 	_, readErr := io.ReadAll(obj)

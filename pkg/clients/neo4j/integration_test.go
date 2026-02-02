@@ -380,7 +380,7 @@ func (s *Neo4jIntegrationSuite) TestExecuteWrite_MultipleDataTypes() {
 // managed transaction methods.
 func (s *Neo4jIntegrationSuite) TestSession_RawAccess() {
 	session := s.client.Session(s.ctx)
-	defer session.Close(s.ctx)
+	defer func() { _ = session.Close(s.ctx) }()
 
 	result, err := session.Run(s.ctx, "RETURN 'raw_session' AS val", nil)
 	require.NoError(s.T(), err)

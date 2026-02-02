@@ -208,7 +208,7 @@ func (c *Client) ExecuteRead(ctx context.Context, cypher string, params map[stri
 	ctx, span := c.startSpan(ctx, "ExecuteRead", cypher)
 
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: c.databaseName})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		res, err := tx.Run(ctx, cypher, params)
@@ -252,7 +252,7 @@ func (c *Client) ExecuteWrite(ctx context.Context, cypher string, params map[str
 	ctx, span := c.startSpan(ctx, "ExecuteWrite", cypher)
 
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: c.databaseName})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	result, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (any, error) {
 		res, err := tx.Run(ctx, cypher, params)
@@ -290,7 +290,7 @@ func (c *Client) Run(ctx context.Context, cypher string, params map[string]any) 
 	ctx, span := c.startSpan(ctx, "Run", cypher)
 
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: c.databaseName})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	result, err := session.Run(ctx, cypher, params)
 	if err != nil {
@@ -313,7 +313,7 @@ func (c *Client) Run(ctx context.Context, cypher string, params map[string]any) 
 // Example:
 //
 //	session := client.Session(ctx)
-//	defer session.Close(ctx)
+//	defer func() { _ = session.Close(ctx) }()
 //	// Use session directly...
 func (c *Client) Session(ctx context.Context) neo4j.SessionWithContext {
 	return c.driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: c.databaseName})
