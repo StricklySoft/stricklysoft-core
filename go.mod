@@ -5,6 +5,7 @@ go 1.22.2
 toolchain go1.22.12
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/minio/minio-go/v7 v7.0.82
@@ -19,6 +20,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/qdrant v0.34.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.34.0
 	go.opentelemetry.io/otel v1.26.0
+	go.opentelemetry.io/otel/sdk v1.26.0
 	go.opentelemetry.io/otel/trace v1.26.0
 	google.golang.org/grpc v1.66.0
 	gopkg.in/yaml.v3 v3.0.1
