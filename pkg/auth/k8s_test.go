@@ -318,11 +318,19 @@ func TestReadServiceAccountToken_DefaultPath(t *testing.T) {
 	t.Parallel()
 
 	// Calling with empty string should use DefaultSATokenPath.
-	// Since that file likely doesn't exist in a test environment,
-	// we expect a file-not-found error with the default path.
-	_, err := ReadServiceAccountToken("")
-	require.Error(t, err, "ReadServiceAccountToken(\"\") should fail when default path doesn't exist")
-	assert.Contains(t, err.Error(), DefaultSATokenPath, "error should reference the default SA token path")
+	// Behavior depends on whether the test is running inside a
+	// Kubernetes pod (e.g., self-hosted CI runners) where the
+	// default SA token path exists.
+	token, err := ReadServiceAccountToken("")
+	if _, statErr := os.Stat(DefaultSATokenPath); statErr == nil {
+		// Running inside a K8s pod: the default token file exists.
+		require.NoError(t, err, "ReadServiceAccountToken(\"\") should succeed when default path exists")
+		assert.NotEmpty(t, token, "token should not be empty when default SA token file exists")
+	} else {
+		// Not in K8s: file doesn't exist, expect an error.
+		require.Error(t, err, "ReadServiceAccountToken(\"\") should fail when default path doesn't exist")
+		assert.Contains(t, err.Error(), DefaultSATokenPath, "error should reference the default SA token path")
+	}
 }
 
 // --------------------------------------------------------------------------

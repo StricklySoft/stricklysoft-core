@@ -44,7 +44,7 @@ jobs:
   # Uses the latest golangci-lint with configuration from .golangci.yml
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: stricklysoft-runners
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,7 +73,7 @@ jobs:
   # Generates coverage reports and uploads to Codecov.
   test:
     name: Test (Go ${{ matrix.go-version }})
-    runs-on: ubuntu-latest
+    runs-on: stricklysoft-runners
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +81,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
       - name: Set up Go ${{ matrix.go-version }}
         uses: actions/setup-go@v5
@@ -98,9 +104,13 @@ jobs:
 
       - name: Run unit tests with race detector
         run: go test -v -race -shuffle=on ./...
+        env:
+          CGO_ENABLED: "1"
 
       - name: Run tests with coverage
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        env:
+          CGO_ENABLED: "1"
 
       - name: Upload coverage to Codecov
         if: matrix.go-version == env.GO_VERSION_LINT
@@ -119,7 +129,7 @@ jobs:
   # Runs after lint and test to fail fast on code issues.
   build:
     name: Build (Go ${{ matrix.go-version }})
-    runs-on: ubuntu-latest
+    runs-on: stricklysoft-runners
     needs: [lint, test]
     strategy:
       fail-fast: false
@@ -156,7 +166,7 @@ jobs:
   # Only runs if integration test files exist.
   integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: stricklysoft-runners
     needs: [test]
     steps:
       - name: Checkout code
