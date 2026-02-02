@@ -161,25 +161,10 @@ func newStringCmd(val string, err error) *redis.StringCmd {
 	return cmd
 }
 
-// newIntCmd creates a *redis.IntCmd with the given value or error.
-func newIntCmd(val int64, err error) *redis.IntCmd {
+// newIntCmd creates a *redis.IntCmd with the given value.
+func newIntCmd(val int64) *redis.IntCmd {
 	cmd := redis.NewIntCmd(context.Background())
-	if err != nil {
-		cmd.SetErr(err)
-	} else {
-		cmd.SetVal(val)
-	}
-	return cmd
-}
-
-// newDurationCmd creates a *redis.DurationCmd with the given value or error.
-func newDurationCmd(val time.Duration, err error) *redis.DurationCmd {
-	cmd := redis.NewDurationCmd(context.Background(), time.Second)
-	if err != nil {
-		cmd.SetErr(err)
-	} else {
-		cmd.SetVal(val)
-	}
+	cmd.SetVal(val)
 	return cmd
 }
 
@@ -342,7 +327,7 @@ func TestClient_Del_Success(t *testing.T) {
 	t.Parallel()
 	m := new(mockCmdable)
 	m.On("Del", mock.Anything, []string{"key1", "key2"}).
-		Return(newIntCmd(2, nil))
+		Return(newIntCmd(2))
 
 	client := NewFromClient(m, &Config{DB: 0})
 	deleted, err := client.Del(context.Background(), "key1", "key2")
@@ -362,7 +347,7 @@ func TestClient_HSet_Success(t *testing.T) {
 	t.Parallel()
 	m := new(mockCmdable)
 	m.On("HSet", mock.Anything, "hash1", []interface{}{"field1", "value1"}).
-		Return(newIntCmd(1, nil))
+		Return(newIntCmd(1))
 
 	client := NewFromClient(m, &Config{DB: 0})
 	added, err := client.HSet(context.Background(), "hash1", "field1", "value1")
@@ -423,7 +408,7 @@ func TestClient_LPush_Success(t *testing.T) {
 	t.Parallel()
 	m := new(mockCmdable)
 	m.On("LPush", mock.Anything, "list1", []interface{}{"item1"}).
-		Return(newIntCmd(1, nil))
+		Return(newIntCmd(1))
 
 	client := NewFromClient(m, &Config{DB: 0})
 	length, err := client.LPush(context.Background(), "list1", "item1")
@@ -463,7 +448,7 @@ func TestClient_SAdd_Success(t *testing.T) {
 	t.Parallel()
 	m := new(mockCmdable)
 	m.On("SAdd", mock.Anything, "set1", []interface{}{"member1", "member2"}).
-		Return(newIntCmd(2, nil))
+		Return(newIntCmd(2))
 
 	client := NewFromClient(m, &Config{DB: 0})
 	added, err := client.SAdd(context.Background(), "set1", "member1", "member2")
