@@ -569,3 +569,272 @@ func TestUserIdentity_Permissions_NilPermissions(t *testing.T) {
 	assert.NotNil(t, got, "Permissions() returned nil, expected empty slice")
 	assert.Len(t, got, 0)
 }
+
+// ---------------------------------------------------------------------------
+// Permission.Match — comprehensive wildcard and scope combinations
+// ---------------------------------------------------------------------------
+
+func TestPermission_Match_ExactMatch(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "documents", Action: "read"}
+
+	assert.True(t, p.Match("documents", "read", ""), "exact resource + action, empty scope should match")
+	assert.True(t, p.Match("documents", "read", "production"), "exact resource + action, specific scope should match (perm scope is empty = global)")
+	assert.False(t, p.Match("users", "read", ""), "wrong resource should not match")
+	assert.False(t, p.Match("documents", "write", ""), "wrong action should not match")
+}
+
+func TestPermission_Match_WildcardResource(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "*", Action: "read"}
+
+	assert.True(t, p.Match("documents", "read", ""), "wildcard resource should match any resource")
+	assert.True(t, p.Match("users", "read", ""), "wildcard resource should match any resource")
+	assert.True(t, p.Match("anything", "read", "production"), "wildcard resource + global scope should match with specific scope check")
+	assert.False(t, p.Match("documents", "write", ""), "wildcard resource should not match wrong action")
+}
+
+func TestPermission_Match_WildcardAction(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "documents", Action: "*"}
+
+	assert.True(t, p.Match("documents", "read", ""), "wildcard action should match any action")
+	assert.True(t, p.Match("documents", "write", ""), "wildcard action should match any action")
+	assert.True(t, p.Match("documents", "delete", "staging"), "wildcard action + global scope should match specific scope check")
+	assert.False(t, p.Match("users", "read", ""), "wildcard action should not match wrong resource")
+}
+
+func TestPermission_Match_FullWildcard(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "*", Action: "*"}
+
+	assert.True(t, p.Match("anything", "anything", ""), "full wildcard should match anything")
+	assert.True(t, p.Match("documents", "read", "production"), "full wildcard should match specific scope")
+	assert.True(t, p.Match("", "", ""), "full wildcard should match empty strings")
+}
+
+func TestPermission_Match_ScopedPermission_ExactScope(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "deployments", Action: "write", Scope: "production"}
+
+	assert.True(t, p.Match("deployments", "write", "production"), "exact scope match should succeed")
+	assert.False(t, p.Match("deployments", "write", "staging"), "different scope should not match")
+	assert.True(t, p.Match("deployments", "write", ""), "empty check scope should match any perm scope")
+	assert.True(t, p.Match("deployments", "write", "*"), "wildcard check scope should match any perm scope")
+}
+
+func TestPermission_Match_ScopedPermission_WildcardScope(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "agents", Action: "execute", Scope: "*"}
+
+	assert.True(t, p.Match("agents", "execute", "production"), "wildcard scope perm should match any scope")
+	assert.True(t, p.Match("agents", "execute", "staging"), "wildcard scope perm should match any scope")
+	assert.True(t, p.Match("agents", "execute", ""), "wildcard scope perm should match empty scope")
+	assert.False(t, p.Match("agents", "read", "production"), "wildcard scope should not bypass action check")
+}
+
+func TestPermission_Match_GlobalPermission_MatchesAnyScope(t *testing.T) {
+	t.Parallel()
+	// Global permission (Scope="") should match any check scope.
+	p := Permission{Resource: "logs", Action: "read"}
+
+	assert.True(t, p.Match("logs", "read", ""), "global perm + empty scope check")
+	assert.True(t, p.Match("logs", "read", "production"), "global perm + specific scope check")
+	assert.True(t, p.Match("logs", "read", "*"), "global perm + wildcard scope check")
+}
+
+func TestPermission_Match_EmptyCheckScope_MatchesAnyPermScope(t *testing.T) {
+	t.Parallel()
+	// Empty check scope ("") should match any permission scope.
+	// This is the key backward-compatibility property.
+	tests := []struct {
+		name      string
+		permScope string
+	}{
+		{name: "global perm", permScope: ""},
+		{name: "wildcard perm", permScope: "*"},
+		{name: "production perm", permScope: "production"},
+		{name: "staging perm", permScope: "staging"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := Permission{Resource: "docs", Action: "read", Scope: tt.permScope}
+			assert.True(t, p.Match("docs", "read", ""),
+				"empty check scope should match permission with Scope=%q", tt.permScope)
+		})
+	}
+}
+
+func TestPermission_Match_WildcardCheckScope_MatchesAnyPermScope(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		permScope string
+	}{
+		{name: "global perm", permScope: ""},
+		{name: "wildcard perm", permScope: "*"},
+		{name: "production perm", permScope: "production"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := Permission{Resource: "docs", Action: "read", Scope: tt.permScope}
+			assert.True(t, p.Match("docs", "read", "*"),
+				"wildcard check scope should match permission with Scope=%q", tt.permScope)
+		})
+	}
+}
+
+func TestPermission_Match_ScopeMismatch(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "secrets", Action: "read", Scope: "production"}
+
+	assert.False(t, p.Match("secrets", "read", "staging"), "production scope should not match staging")
+	assert.False(t, p.Match("secrets", "read", "development"), "production scope should not match development")
+}
+
+func TestPermission_Match_AllWildcards(t *testing.T) {
+	t.Parallel()
+	p := Permission{Resource: "*", Action: "*", Scope: "*"}
+
+	assert.True(t, p.Match("any", "thing", "anywhere"), "all wildcards should match everything")
+	assert.True(t, p.Match("", "", ""), "all wildcards should match empty strings")
+}
+
+func TestPermission_Match_MixedWildcards(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		perm     Permission
+		resource string
+		action   string
+		scope    string
+		want     bool
+	}{
+		{
+			name:     "wildcard resource + exact action + exact scope",
+			perm:     Permission{Resource: "*", Action: "read", Scope: "production"},
+			resource: "docs", action: "read", scope: "production",
+			want: true,
+		},
+		{
+			name:     "wildcard resource + exact action + wrong scope",
+			perm:     Permission{Resource: "*", Action: "read", Scope: "production"},
+			resource: "docs", action: "read", scope: "staging",
+			want: false,
+		},
+		{
+			name:     "exact resource + wildcard action + wildcard scope",
+			perm:     Permission{Resource: "agents", Action: "*", Scope: "*"},
+			resource: "agents", action: "delete", scope: "any-env",
+			want: true,
+		},
+		{
+			name:     "exact resource + wildcard action + wrong resource",
+			perm:     Permission{Resource: "agents", Action: "*", Scope: "*"},
+			resource: "users", action: "delete", scope: "production",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.perm.Match(tt.resource, tt.action, tt.scope)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Permission.String
+// ---------------------------------------------------------------------------
+
+func TestPermission_String_TwoPart(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		perm Permission
+		want string
+	}{
+		{name: "simple", perm: Permission{Resource: "documents", Action: "read"}, want: "documents:read"},
+		{name: "wildcards", perm: Permission{Resource: "*", Action: "*"}, want: "*:*"},
+		{name: "empty scope", perm: Permission{Resource: "agents", Action: "execute", Scope: ""}, want: "agents:execute"},
+		{name: "wildcard scope", perm: Permission{Resource: "logs", Action: "read", Scope: "*"}, want: "logs:read"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.perm.String())
+		})
+	}
+}
+
+func TestPermission_String_ThreePart(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		perm Permission
+		want string
+	}{
+		{
+			name: "specific scope",
+			perm: Permission{Resource: "deployments", Action: "write", Scope: "production"},
+			want: "deployments:write:production",
+		},
+		{
+			name: "staging scope",
+			perm: Permission{Resource: "agents", Action: "execute", Scope: "staging"},
+			want: "agents:execute:staging",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.perm.String())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HasPermission with scoped permissions — backward compatibility
+// ---------------------------------------------------------------------------
+
+func TestHasPermission_WithScopedPermissions_BackwardCompat(t *testing.T) {
+	t.Parallel()
+	// Scoped permissions should still match when HasPermission is called
+	// (2-arg form passes scope="" internally, which matches any perm scope).
+	perms := []Permission{
+		{Resource: "documents", Action: "read", Scope: "production"},
+		{Resource: "agents", Action: "execute", Scope: "staging"},
+		{Resource: "logs", Action: "read"}, // global
+	}
+	identity := mustNewServiceIdentity(t, "svc-1", "svc", "ns", nil, perms)
+
+	// All permissions should match via 2-arg HasPermission (scope-unaware).
+	assert.True(t, identity.HasPermission("documents", "read"),
+		"scoped permission should match via 2-arg HasPermission")
+	assert.True(t, identity.HasPermission("agents", "execute"),
+		"scoped permission should match via 2-arg HasPermission")
+	assert.True(t, identity.HasPermission("logs", "read"),
+		"global permission should match via 2-arg HasPermission")
+
+	// Non-existent permissions should still fail.
+	assert.False(t, identity.HasPermission("secrets", "read"))
+	assert.False(t, identity.HasPermission("documents", "delete"))
+}
+
+func TestHasPermission_WithScopedPermissions_UserIdentity(t *testing.T) {
+	t.Parallel()
+	perms := []Permission{
+		{Resource: "projects", Action: "read", Scope: "tenant-a"},
+		{Resource: "*", Action: "read", Scope: "tenant-b"},
+	}
+	identity := mustNewUserIdentity(t, "usr-1", "a@b.com", "A", nil, perms)
+
+	// Both should match via scope-unaware HasPermission.
+	assert.True(t, identity.HasPermission("projects", "read"))
+	assert.True(t, identity.HasPermission("users", "read"),
+		"wildcard resource with scoped perm should still match via 2-arg HasPermission")
+	assert.False(t, identity.HasPermission("projects", "write"))
+}

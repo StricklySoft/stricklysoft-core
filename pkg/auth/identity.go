@@ -182,15 +182,26 @@ func (b *BasicIdentity) HasPermission(resource, action string) bool {
 	return false
 }
 
-// Permission represents an authorization grant for a specific resource and
-// action. Permissions are attached to identities and checked via
-// [Identity.HasPermission] to make authorization decisions.
+// Permission represents an authorization grant for a specific resource,
+// action, and optional scope. Permissions are attached to identities and
+// checked via [Identity.HasPermission] to make authorization decisions.
+//
+// The Scope field enables multi-tenant and environment-scoped authorization.
+// When Scope is empty (""), the permission applies globally (all scopes).
+// When Scope is "*", it is an explicit wildcard matching any scope.
+// When Scope contains a specific value (e.g., "production"), the permission
+// is restricted to that scope only.
+//
+// Permission is used as a map key for deduplication in [ClaimsToPermissions].
+// Because Go struct equality compares all fields, two permissions with the
+// same Resource and Action but different Scopes are distinct keys.
 //
 // Example permissions:
 //
-//	Permission{Resource: "documents", Action: "read"}
-//	Permission{Resource: "users", Action: "delete"}
-//	Permission{Resource: "*", Action: "*"}  // wildcard — full access
+//	Permission{Resource: "documents", Action: "read"}                       // global — all scopes
+//	Permission{Resource: "users", Action: "delete", Scope: "production"}    // scoped to production
+//	Permission{Resource: "*", Action: "*"}                                  // wildcard — full access, all scopes
+//	Permission{Resource: "agents", Action: "execute", Scope: "*"}           // any scope, explicit wildcard
 type Permission struct {
 	// Resource is the resource being accessed (e.g., "documents", "users",
 	// "agents"). The wildcard "*" matches all resources.
@@ -199,6 +210,65 @@ type Permission struct {
 	// Action is the operation being performed (e.g., "read", "write",
 	// "delete", "execute"). The wildcard "*" matches all actions.
 	Action string
+
+	// Scope constrains the permission to a specific scope such as an
+	// environment ("production", "staging"), tenant, or organizational unit.
+	//
+	// Matching semantics:
+	//   - "" (empty): The permission is global and applies to all scopes.
+	//     This is the default and ensures backward compatibility with
+	//     permissions created before scope support was added.
+	//   - "*" (wildcard): Explicitly matches any scope.
+	//   - Any other value: Matches only when the check scope is empty,
+	//     "*", or exactly equal to this value.
+	//
+	// When [Identity.HasPermission] is called (2-arg, scope-unaware), the
+	// check scope is "" which matches any permission scope, preserving
+	// backward compatibility with existing code.
+	Scope string
+}
+
+// Match reports whether this permission grants access to the specified
+// resource, action, and scope combination. Each of the three dimensions
+// (resource, action, scope) is evaluated independently, and all three
+// must match for the permission to apply.
+//
+// Wildcard matching rules for resource and action:
+//   - "*" in the permission matches any value in the check.
+//   - An exact string match is required otherwise.
+//
+// Scope matching rules (symmetric):
+//   - If either the permission's Scope or the check scope is "" (empty),
+//     the scope dimension matches. This means global permissions (Scope="")
+//     apply to all scopes, and a check with scope="" matches any permission
+//     regardless of its scope.
+//   - If either is "*", the scope dimension matches.
+//   - Otherwise, an exact string match is required.
+//
+// This symmetric design ensures that [Identity.HasPermission] (which passes
+// scope="") remains fully backward compatible: it matches permissions
+// regardless of their Scope value.
+func (p Permission) Match(resource, action, scope string) bool {
+	resourceMatch := p.Resource == "*" || p.Resource == resource
+	actionMatch := p.Action == "*" || p.Action == action
+	scopeMatch := p.Scope == "" || p.Scope == "*" ||
+		scope == "" || scope == "*" ||
+		p.Scope == scope
+	return resourceMatch && actionMatch && scopeMatch
+}
+
+// String returns a human-readable representation of the permission in
+// colon-delimited format. If the Scope is empty or "*" (global/wildcard),
+// the format is "resource:action". If a specific scope is set, the format
+// is "resource:action:scope".
+//
+// This format is consistent with [ParsePermissionString] and is suitable
+// for logging, debugging, and serialization.
+func (p Permission) String() string {
+	if p.Scope == "" || p.Scope == "*" {
+		return p.Resource + ":" + p.Action
+	}
+	return p.Resource + ":" + p.Action + ":" + p.Scope
 }
 
 // ServiceIdentity represents a platform service or agent authenticated via
@@ -364,13 +434,13 @@ func (u *UserIdentity) Permissions() []Permission {
 }
 
 // hasPermission is a shared helper that checks whether a permission list
-// grants access to the given resource and action. Supports wildcard "*"
-// for both resource and action fields.
+// grants access to the given resource and action. It delegates to
+// [Permission.Match] with an empty scope, which matches any permission
+// regardless of its Scope value. This preserves backward compatibility
+// with the 2-argument [Identity.HasPermission] interface.
 func hasPermission(permissions []Permission, resource, action string) bool {
 	for _, p := range permissions {
-		resourceMatch := p.Resource == "*" || p.Resource == resource
-		actionMatch := p.Action == "*" || p.Action == action
-		if resourceMatch && actionMatch {
+		if p.Match(resource, action, "") {
 			return true
 		}
 	}
