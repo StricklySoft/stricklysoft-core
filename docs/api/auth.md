@@ -30,7 +30,11 @@ The package ships a production-ready `JWTValidator` that implements the
 ServiceAccount** (RS256/ES256 via JWKS), **platform HMAC** (HS256), and
 **external OIDC** (RS256/ES256 via JWKS). An RBAC subsystem maps JWT
 claims (roles, scopes, direct permissions) to the `Permission` model
-used by `ServiceIdentity` and `UserIdentity`.
+used by `ServiceIdentity` and `UserIdentity`. The `Permission` model
+supports three-dimensional authorization: **resource**, **action**, and
+**scope** (environment, tenant, or organizational unit). The `Role` and
+`PermissionSet` types provide structured RBAC modeling with O(1)
+permission lookups.
 
 ## Identity Types
 
@@ -160,27 +164,90 @@ fmt.Println(identity.HasPermission("pods", "read"))  // false
 
 ## Permission
 
-`Permission` represents a resource-action pair used for authorization
-checks.
+`Permission` represents an authorization grant for a specific resource,
+action, and optional scope. Permissions are attached to identities and
+checked via `Identity.HasPermission` or `Permission.Match` for
+authorization decisions.
 
 ```go
 type Permission struct {
     Resource string
     Action   string
+    Scope    string
 }
 ```
 
-| Field      | Type     | Description                                      |
-|------------|----------|--------------------------------------------------|
-| `Resource` | `string` | The resource being accessed; `"*"` matches any   |
-| `Action`   | `string` | The action being performed; `"*"` matches any    |
+| Field      | Type     | Description                                                              |
+|------------|----------|--------------------------------------------------------------------------|
+| `Resource` | `string` | The resource being accessed; `"*"` matches any                           |
+| `Action`   | `string` | The action being performed; `"*"` matches any                            |
+| `Scope`    | `string` | Optional scope constraint (environment, tenant); empty = global          |
 
-Wildcard matching follows these rules:
+### Scope Semantics
+
+The `Scope` field enables multi-tenant and environment-scoped
+authorization. Scope matching is symmetric -- either side being empty
+or `"*"` causes the scope dimension to match:
+
+| Permission Scope | Check Scope    | Match? | Reason                                      |
+|------------------|----------------|--------|---------------------------------------------|
+| `""` (global)    | `"production"` | Yes    | Global permission applies to all scopes     |
+| `"*"` (wildcard) | `"production"` | Yes    | Wildcard scope matches any scope            |
+| `"production"`   | `"production"` | Yes    | Exact match                                 |
+| `"production"`   | `"staging"`    | No     | Scope mismatch                              |
+| `"production"`   | `""`           | Yes    | Empty check scope matches any permission    |
+| `"production"`   | `"*"`          | Yes    | Wildcard check scope matches any permission |
+
+**Backward compatibility:** When `HasPermission(resource, action)` is
+called (the 2-argument, scope-unaware form), the check scope is `""`
+which matches any permission scope. This ensures all existing code
+continues to work without modification.
+
+`Permission` is used as a map key for deduplication in
+`ClaimsToPermissions`. Because Go struct equality compares all fields,
+`{Resource: "a", Action: "b"}` and
+`{Resource: "a", Action: "b", Scope: "prod"}` are distinct keys.
+
+### Wildcard Matching Rules
 
 - `Resource: "*"` matches any resource.
 - `Action: "*"` matches any action.
-- `Resource: "*", Action: "*"` grants unrestricted access.
+- `Scope: "*"` matches any scope; `Scope: ""` also matches any scope.
+- `Resource: "*", Action: "*"` grants unrestricted access to all scopes.
 - Exact string comparison is used for non-wildcard values.
+
+### Methods
+
+| Method   | Signature                                      | Description                                     |
+|----------|-------------------------------------------------|-------------------------------------------------|
+| `Match`  | `Match(resource, action, scope string) bool`    | 3-way match with wildcard support for all fields|
+| `String` | `String() string`                               | Returns `"resource:action"` or `"resource:action:scope"` |
+
+`Match` evaluates all three dimensions independently. All three must
+match for the permission to apply. `String` omits the scope part when
+Scope is empty or `"*"`.
+
+### Examples
+
+```go
+// Global permission (applies to all scopes)
+perm := auth.Permission{Resource: "documents", Action: "read"}
+perm.Match("documents", "read", "production")  // true
+perm.Match("documents", "read", "")            // true
+perm.String()                                   // "documents:read"
+
+// Scoped permission (restricted to production)
+perm = auth.Permission{Resource: "deployments", Action: "write", Scope: "production"}
+perm.Match("deployments", "write", "production")  // true
+perm.Match("deployments", "write", "staging")      // false
+perm.Match("deployments", "write", "")             // true (empty check = match any)
+perm.String()                                       // "deployments:write:production"
+
+// Full wildcard
+perm = auth.Permission{Resource: "*", Action: "*", Scope: "*"}
+perm.Match("anything", "anything", "anywhere")  // true
+perm.String()                                    // "*:*"
+```
 
 ## ServiceIdentity
 
@@ -605,7 +672,8 @@ fmt.Printf("Running as %s in namespace %s\n",
 ## RBAC Permission Mapping
 
 The RBAC subsystem maps JWT claims to `Permission` values used by
-`ServiceIdentity` and `UserIdentity` for authorization checks.
+`ServiceIdentity` and `UserIdentity` for authorization checks. It also
+provides `Role` and `PermissionSet` types for structured RBAC modeling.
 
 ### RolePermissionMap
 
@@ -636,11 +704,11 @@ func ClaimsToPermissions(claims map[string]any, roleMap RolePermissionMap) []Per
 Extracts permissions from JWT claims by inspecting three fields:
 
 1. **`"permissions"`** -- Direct grants as `[]string` in
-   `"resource:action"` format.
+   `"resource:action"` or `"resource:action:scope"` format.
 2. **`"roles"`** -- Role names as `[]string`, resolved via the provided
    `RolePermissionMap`.
 3. **`"scope"`** -- OAuth2 scopes as a space-separated string in
-   `"resource:action"` format.
+   `"resource:action"` or `"resource:action:scope"` format.
 
 All sources are merged and deduplicated. Malformed entries are silently
 skipped.
@@ -660,8 +728,38 @@ Convenience function equivalent to
 func ParsePermissionString(s string) (Permission, error)
 ```
 
-Parses `"resource:action"` into a `Permission`. Returns an error if the
-colon separator is missing or either part is empty.
+Parses a permission string into a `Permission`. Two formats are
+supported:
+
+- `"resource:action"` -- Creates a Permission with empty Scope (global).
+- `"resource:action:scope"` -- Creates a Permission with the specified
+  Scope.
+
+Returns an error if the colon separator is missing, either the resource
+or action part is empty, or the scope part is empty in three-part format
+(use two-part format for global permissions).
+
+```go
+p, _ := auth.ParsePermissionString("documents:read")
+// Permission{Resource: "documents", Action: "read", Scope: ""}
+
+p, _ = auth.ParsePermissionString("deployments:write:production")
+// Permission{Resource: "deployments", Action: "write", Scope: "production"}
+
+p, _ = auth.ParsePermissionString("*:*:*")
+// Permission{Resource: "*", Action: "*", Scope: "*"}
+```
+
+### FormatPermission
+
+```go
+func FormatPermission(p Permission) string
+```
+
+Returns the string representation of a `Permission` in colon-delimited
+format. Equivalent to calling `Permission.String()`. Provided as a
+standalone function for use in contexts where a function value is
+needed (e.g., mapping, serialization pipelines).
 
 ### ParseScopePermissions
 
@@ -670,15 +768,155 @@ func ParseScopePermissions(scope string) []Permission
 ```
 
 Splits a space-separated OAuth2 scope string and parses each token as a
-`"resource:action"` permission. Malformed tokens are skipped.
+permission. Supports both `"resource:action"` and
+`"resource:action:scope"` formats. Malformed tokens are skipped.
 
 ```go
-perms := auth.ParseScopePermissions("agents:read logs:read deployments:create")
+perms := auth.ParseScopePermissions("agents:read deployments:write:production")
 // []Permission{
 //     {Resource: "agents", Action: "read"},
-//     {Resource: "logs", Action: "read"},
-//     {Resource: "deployments", Action: "create"},
+//     {Resource: "deployments", Action: "write", Scope: "production"},
 // }
+```
+
+## Role
+
+`Role` represents a named collection of permissions following the RBAC
+pattern. Each role has a human-readable name, description, and set of
+permissions.
+
+```go
+type Role struct {
+    Name        string
+    Description string
+    Permissions []Permission
+}
+```
+
+| Field         | Type           | Description                                   |
+|---------------|----------------|-----------------------------------------------|
+| `Name`        | `string`       | Unique identifier (e.g., "admin", "viewer")   |
+| `Description` | `string`       | Human-readable explanation of the role         |
+| `Permissions` | `[]Permission` | Resource/action/scope grants                  |
+
+### Methods
+
+| Method                | Signature                                           | Description                                     |
+|-----------------------|-----------------------------------------------------|-------------------------------------------------|
+| `HasPermission`       | `HasPermission(resource, action string) bool`       | Scope-unaware check (consistent with Identity)  |
+| `HasScopedPermission` | `HasScopedPermission(resource, action, scope string) bool` | Scope-aware check via Permission.Match     |
+
+`HasPermission` passes scope="" internally, matching permissions
+regardless of their Scope value. Use `HasScopedPermission` when
+authorization must account for scope boundaries.
+
+### StandardRoles
+
+```go
+func StandardRoles() []Role
+```
+
+Returns the platform's standard role definitions:
+
+| Role       | Description                                         | Permissions                                  |
+|------------|-----------------------------------------------------|----------------------------------------------|
+| `admin`    | Full unrestricted access to all resources            | `*:*`                                        |
+| `operator` | Operational access for SRE and operations teams      | `agents:*`, `deployments:*`, `logs:read`     |
+| `viewer`   | Read-only access for auditors and stakeholders       | `*:read`                                     |
+
+Standard roles are scope-unaware (Scope="" on all permissions),
+meaning they apply globally. For scope-restricted roles, create custom
+`Role` values with appropriately scoped permissions.
+
+Each call returns a new slice; callers may safely modify it.
+
+### StandardRoleMap
+
+```go
+func StandardRoleMap() map[string]Role
+```
+
+Returns the standard roles indexed by name for O(1) lookup.
+
+```go
+roleMap := auth.StandardRoleMap()
+admin := roleMap["admin"]
+fmt.Println(admin.HasPermission("anything", "anything"))  // true
+
+viewer := roleMap["viewer"]
+fmt.Println(viewer.HasPermission("docs", "read"))    // true
+fmt.Println(viewer.HasPermission("docs", "delete"))  // false
+```
+
+## PermissionSet
+
+`PermissionSet` is an optimized, immutable collection of permissions
+that provides O(1) exact-match lookups for non-wildcard permissions and
+a linear fallback for wildcard matching. It is designed for performance-
+critical authorization paths.
+
+### Internal Architecture
+
+At construction time, permissions are split into three groups:
+
+1. **Exact map** (`map[Permission]struct{}`): Non-wildcard permissions
+   stored for O(1) lookup.
+2. **Scope-agnostic index** (`map[{Resource,Action}]struct{}`): Enables
+   O(1) lookup when the check scope is "" or "*" (matches any scope).
+3. **Wildcards slice** (`[]Permission`): Permissions with "*" in any
+   field, requiring linear scanning via `Permission.Match()`.
+
+### Construction
+
+```go
+func NewPermissionSet(perms []Permission) *PermissionSet
+```
+
+Creates a new `PermissionSet` from the given permissions. Duplicates
+are removed. A nil or empty input produces a valid, empty set.
+
+### Methods
+
+| Method        | Signature                                        | Description                                     |
+|---------------|--------------------------------------------------|-------------------------------------------------|
+| `Has`         | `Has(resource, action, scope string) bool`       | O(1) exact match only; ignores wildcards        |
+| `Match`       | `Match(resource, action, scope string) bool`     | O(1) exact match + wildcard fallback            |
+| `Permissions` | `Permissions() []Permission`                     | Defensive copy of all permissions               |
+| `Len`         | `Len() int`                                      | Number of unique permissions                    |
+
+**`Has` vs `Match`**: Use `Has` when you need to check if a specific
+permission was explicitly granted (no wildcard evaluation). Use `Match`
+for authorization decisions -- it correctly handles both exact and
+wildcard permissions.
+
+### Match Algorithm
+
+```
+Match(resource, action, scope)
+  |-- O(1) exact lookup: {resource, action, scope} in exact map
+  |-- O(1) scope fallback:
+  |   |-- If check scope is "" or "*": check anyScope index
+  |   +-- If check scope is specific: check {resource, action, ""} in exact map
+  +-- Linear wildcard scan: iterate wildcards, call Permission.Match()
+```
+
+### Example
+
+```go
+ps := auth.NewPermissionSet([]auth.Permission{
+    {Resource: "documents", Action: "read"},
+    {Resource: "agents", Action: "*"},
+    {Resource: "deployments", Action: "write", Scope: "production"},
+})
+
+ps.Match("documents", "read", "")           // true  (O(1) exact)
+ps.Match("agents", "execute", "")           // true  (wildcard fallback)
+ps.Match("deployments", "write", "production") // true  (O(1) exact)
+ps.Match("deployments", "write", "staging")    // false (scope mismatch)
+ps.Match("deployments", "write", "")           // true  (empty scope matches any perm)
+ps.Len()                                       // 3
+ps.Has("documents", "read", "")               // true  (exact)
+ps.Has("agents", "execute", "")               // false (Has ignores wildcards)
 ```
 
 ## Call Chain
@@ -1084,6 +1322,18 @@ fmt.Println(decoded["role"]) // "admin"
     validation and propagation functions accept `context.Context`,
     ensuring that upstream deadlines and cancellation signals are
     respected.
+18. **Scope isolation for multi-tenant security** -- The `Permission`
+    Scope field enables environment and tenant isolation. A permission
+    scoped to `"production"` does not match checks for `"staging"`,
+    preventing cross-environment privilege escalation. The scope-unaware
+    `HasPermission` method (scope="") matches any scope for backward
+    compatibility, but scope-aware checks via `Permission.Match` or
+    `Role.HasScopedPermission` enforce strict scope boundaries.
+19. **PermissionSet O(1) performance for authorization hot paths** --
+    `PermissionSet` uses map-based lookups to avoid linear scanning on
+    every authorization check. This prevents degraded performance as
+    permission sets grow, which could otherwise be exploited as a
+    denial-of-service vector via tokens with many permissions.
 
 ## Example: End-to-End Identity Propagation
 
@@ -1141,5 +1391,6 @@ pkg/auth/
     k8s.go             Kubernetes ServiceAccount validation, ReadServiceAccountToken,
                        ValidateServiceAccount, K8s-specific claim parsing
     rbac.go            RBAC permission mapping, RolePermissionMap, ClaimsToPermissions,
-                       DefaultRolePermissions, ParsePermissionString, ParseScopePermissions
+                       DefaultRolePermissions, ParsePermissionString, ParseScopePermissions,
+                       FormatPermission, Role, PermissionSet, StandardRoles, StandardRoleMap
 ```
