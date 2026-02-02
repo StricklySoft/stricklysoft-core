@@ -62,7 +62,8 @@ func DefaultRolePermissions() RolePermissionMap {
 //
 //  1. "permissions" — direct permission grants. Expected to be a
 //     []interface{} where each element is a string in "resource:action"
-//     format (e.g., "documents:read"). Malformed entries are silently
+//     or "resource:action:scope" format (e.g., "documents:read",
+//     "deployments:write:production"). Malformed entries are silently
 //     skipped.
 //
 //  2. "roles" — role names. Expected to be a []interface{} where each
@@ -70,8 +71,10 @@ func DefaultRolePermissions() RolePermissionMap {
 //     RolePermissionMap. Unknown role names are silently ignored.
 //
 //  3. "scope" — OAuth2 scopes. Expected to be a single space-separated
-//     string where each token is in "resource:action" format (e.g.,
-//     "agents:read logs:read"). Malformed tokens are silently skipped.
+//     string where each token is in "resource:action" or
+//     "resource:action:scope" format (e.g., "agents:read logs:read",
+//     "deployments:write:production agents:read"). Malformed tokens
+//     are silently skipped.
 //
 // Permissions from all three sources are merged and deduplicated before
 // being returned. The function never returns an error; malformed or
@@ -156,15 +159,17 @@ func DefaultClaimsToPermissions(claims map[string]any) []Permission {
 }
 
 // ParseScopePermissions splits a space-separated OAuth2 scope string
-// and parses each token as a "resource:action" permission. Tokens that
-// do not conform to the expected format are silently skipped.
+// and parses each token as a permission using [ParsePermissionString].
+// Both "resource:action" and "resource:action:scope" formats are
+// supported. Tokens that do not conform to the expected format are
+// silently skipped.
 //
 // Example:
 //
-//	ParseScopePermissions("agents:read logs:read")
+//	ParseScopePermissions("agents:read deployments:write:production")
 //	// returns []Permission{
 //	//     {Resource: "agents", Action: "read"},
-//	//     {Resource: "logs", Action: "read"},
+//	//     {Resource: "deployments", Action: "write", Scope: "production"},
 //	// }
 //
 // An empty string returns an empty slice.

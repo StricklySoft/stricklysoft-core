@@ -970,6 +970,11 @@ timeout: 5s
 	require.NoError(t, loader.Load(&cfg))
 	elapsed := time.Since(start)
 
-	const maxLoadTime = 50 * time.Millisecond
+	// NFR-1 baseline is 50ms. The race detector adds significant overhead
+	// (2-10x), so we use a relaxed threshold when -race is enabled.
+	maxLoadTime := 50 * time.Millisecond
+	if raceEnabled {
+		maxLoadTime = 200 * time.Millisecond
+	}
 	assert.LessOrEqual(t, elapsed, maxLoadTime, "Load() took %v, want < %v (NFR-1)", elapsed, maxLoadTime)
 }
