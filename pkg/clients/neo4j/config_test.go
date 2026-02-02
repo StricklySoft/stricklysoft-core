@@ -96,7 +96,6 @@ func TestConfig_Validate_FullySpecified(t *testing.T) {
 		MaxConnectionLifetime:        2 * time.Hour,
 		ConnectionAcquisitionTimeout: 30 * time.Second,
 		ConnectTimeout:               5 * time.Second,
-		Encrypted:                    true,
 	}
 	require.NoError(t, cfg.Validate())
 	// Specified values should be preserved (not overwritten by defaults).

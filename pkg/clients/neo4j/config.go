@@ -177,10 +177,9 @@ type Config struct {
 	// Environment variable: NEO4J_CONNECT_TIMEOUT
 	ConnectTimeout time.Duration `json:"connect_timeout,omitempty" env:"NEO4J_CONNECT_TIMEOUT"`
 
-	// Encrypted enables TLS encryption for the connection. When using
-	// neo4j+s:// or bolt+s:// URI schemes, encryption is implicit.
-	// Environment variable: NEO4J_ENCRYPTED
-	Encrypted bool `json:"encrypted,omitempty" env:"NEO4J_ENCRYPTED"`
+	// NOTE: To enable TLS encryption, use the neo4j+s:// or bolt+s://
+	// URI schemes. This implicitly enables TLS in the driver without
+	// requiring a separate configuration field.
 }
 
 // validSchemes is the set of recognized Neo4j URI schemes.

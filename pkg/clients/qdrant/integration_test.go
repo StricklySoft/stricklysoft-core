@@ -303,7 +303,10 @@ func (s *QdrantIntegrationSuite) TestSearch_NearestNeighbors() {
 	})
 	require.NoError(s.T(), err)
 
-	// Wait briefly for indexing.
+	// Qdrant indexes vectors asynchronously after Upsert returns. A brief
+	// wait is required before search operations to allow the HNSW index to
+	// incorporate the newly upserted points. Without this, searches may
+	// return stale or empty results.
 	time.Sleep(500 * time.Millisecond)
 
 	limit := uint64(3)
@@ -558,7 +561,10 @@ func (s *QdrantIntegrationSuite) TestSearch_WithFilter() {
 	})
 	require.NoError(s.T(), err)
 
-	// Wait briefly for indexing.
+	// Qdrant indexes vectors asynchronously after Upsert returns. A brief
+	// wait is required before search operations to allow the HNSW index to
+	// incorporate the newly upserted points. Without this, searches may
+	// return stale or empty results.
 	time.Sleep(500 * time.Millisecond)
 
 	limit := uint64(10)
@@ -745,7 +751,10 @@ func (s *QdrantIntegrationSuite) TestConcurrentOperations() {
 			"concurrent Upsert should not produce errors")
 	}
 
-	// Wait briefly for indexing.
+	// Qdrant indexes vectors asynchronously after Upsert returns. A brief
+	// wait is required before search operations to allow the HNSW index to
+	// incorporate the newly upserted points. Without this, searches may
+	// return stale or empty results.
 	time.Sleep(500 * time.Millisecond)
 
 	// Verify all points were inserted by scrolling.

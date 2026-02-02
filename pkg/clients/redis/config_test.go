@@ -133,6 +133,14 @@ func TestConfig_Validate_NegativeMinIdleConns(t *testing.T) {
 	assert.Contains(t, err.Error(), "min_idle_conns must be >= 0")
 }
 
+func TestConfig_Validate_PoolSizeLessThanMinIdleConns(t *testing.T) {
+	t.Parallel()
+	cfg := Config{PoolSize: 3, MinIdleConns: 10}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pool_size (3) must be >= min_idle_conns (10)")
+}
+
 func TestConfig_Validate_NegativeDialTimeout(t *testing.T) {
 	t.Parallel()
 	cfg := Config{DialTimeout: -1 * time.Second}

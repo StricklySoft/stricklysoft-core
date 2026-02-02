@@ -70,6 +70,7 @@ func TestConfig_Validate_MinimalValid(t *testing.T) {
 	cfg := Config{
 		Endpoint:  "localhost:9000",
 		AccessKey: "myaccesskey",
+		SecretKey: Secret("mysecretkey"),
 	}
 	require.NoError(t, cfg.Validate())
 	// Default region should be applied.
@@ -109,11 +110,20 @@ func TestConfig_Validate_EmptyAccessKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "access_key must not be empty")
 }
 
+func TestConfig_Validate_EmptySecretKey(t *testing.T) {
+	t.Parallel()
+	cfg := Config{Endpoint: "localhost:9000", AccessKey: "mykey"}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "secret_key must not be empty")
+}
+
 func TestConfig_Validate_DefaultRegion(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
 		Endpoint:  "localhost:9000",
 		AccessKey: "mykey",
+		SecretKey: Secret("mysecret"),
 	}
 	require.NoError(t, cfg.Validate())
 	assert.Equal(t, DefaultRegion, cfg.Region)

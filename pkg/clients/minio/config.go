@@ -141,6 +141,7 @@ func DefaultConfig() *Config {
 // Validation rules:
 //   - Endpoint must not be empty
 //   - AccessKey must not be empty
+//   - SecretKey must not be empty
 //   - Region defaults to "us-east-1" if empty
 func (c *Config) Validate() error {
 	if c.Endpoint == "" {
@@ -148,6 +149,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AccessKey == "" {
 		return errors.New("minio: config access_key must not be empty")
+	}
+	if c.SecretKey.Value() == "" {
+		return errors.New("minio: config secret_key must not be empty")
 	}
 	if c.Region == "" {
 		c.Region = DefaultRegion

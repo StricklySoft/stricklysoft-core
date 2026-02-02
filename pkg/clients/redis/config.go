@@ -300,6 +300,9 @@ func (c *Config) Validate() error {
 	if c.MinIdleConns < 0 {
 		return fmt.Errorf("redis: config min_idle_conns must be >= 0, got %d", c.MinIdleConns)
 	}
+	if c.PoolSize < c.MinIdleConns {
+		return fmt.Errorf("redis: config pool_size (%d) must be >= min_idle_conns (%d)", c.PoolSize, c.MinIdleConns)
+	}
 	if c.DialTimeout < 0 {
 		return fmt.Errorf("redis: config dial_timeout must not be negative, got %v", c.DialTimeout)
 	}

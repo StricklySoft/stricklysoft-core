@@ -42,6 +42,9 @@ package neo4j
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/config"
@@ -128,8 +131,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		c.ConnectionAcquisitionTimeout = cfg.ConnectionAcquisitionTimeout
 		c.SocketConnectTimeout = cfg.ConnectTimeout
 		// Encryption is controlled by the URI scheme: neo4j+s:// or bolt+s://
-		// enable TLS implicitly. The Config.Encrypted field is available for
-		// documentation purposes; actual TLS config uses config.Config.TlsConfig.
+		// enable TLS implicitly via the driver's config.Config.TlsConfig.
 	})
 	if err != nil {
 		return nil, sserr.Wrap(err, sserr.CodeInternalDatabase,
@@ -143,11 +145,20 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 			"neo4j: failed to connect to database")
 	}
 
+	// Extract database name for span attributes. If URI is set and Database
+	// is empty, attempt to parse the database name from the URI path.
+	dbName := cfg.Database
+	if dbName == "" && cfg.URI != "" {
+		if u, parseErr := url.Parse(cfg.URI); parseErr == nil {
+			dbName = strings.TrimPrefix(u.Path, "/")
+		}
+	}
+
 	return &Client{
 		driver:       driver,
 		config:       &cfg,
 		tracer:       otel.Tracer(tracerName),
-		databaseName: cfg.Database,
+		databaseName: dbName,
 	}, nil
 }
 
@@ -210,7 +221,15 @@ func (c *Client) ExecuteRead(ctx context.Context, cypher string, params map[stri
 	if err != nil {
 		return nil, wrapError(err, "neo4j: read transaction failed")
 	}
-	return result.([]*neo4j.Record), nil
+	records, ok := result.([]*neo4j.Record)
+	if !ok {
+		return nil, sserr.Wrap(
+			fmt.Errorf("unexpected result type %T from read transaction", result),
+			sserr.CodeInternalDatabase,
+			"neo4j: read transaction returned unexpected type",
+		)
+	}
+	return records, nil
 }
 
 // ExecuteWrite executes a Cypher query in a managed write transaction and
@@ -246,7 +265,15 @@ func (c *Client) ExecuteWrite(ctx context.Context, cypher string, params map[str
 	if err != nil {
 		return nil, wrapError(err, "neo4j: write transaction failed")
 	}
-	return result.([]*neo4j.Record), nil
+	records, ok := result.([]*neo4j.Record)
+	if !ok {
+		return nil, sserr.Wrap(
+			fmt.Errorf("unexpected result type %T from write transaction", result),
+			sserr.CodeInternalDatabase,
+			"neo4j: write transaction returned unexpected type",
+		)
+	}
+	return records, nil
 }
 
 // Run executes a Cypher query as an auto-commit transaction and returns
