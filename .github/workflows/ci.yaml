@@ -189,10 +189,14 @@ jobs:
       - name: Check for integration tests
         id: check
         run: |
-          if grep -r "//go:build integration" --include="*.go" . 2>/dev/null; then
-            echo "has_tests=true" >> $GITHUB_OUTPUT
-          else
+          if ! grep -r "//go:build integration" --include="*.go" . 2>/dev/null; then
             echo "has_tests=false" >> $GITHUB_OUTPUT
+            echo "No integration test files found"
+          elif ! command -v docker &>/dev/null; then
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+            echo "Docker not available, skipping integration tests"
+          else
+            echo "has_tests=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Run integration tests
